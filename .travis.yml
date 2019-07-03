@@ -35,6 +35,7 @@ install:
         conda env update -f environment_pinned_py2.yml -n pygeogrids
       else
         conda env update -f environment_pinned_py3.yml -n pygeogrids
+      fi
     else
         conda env update -f environment.yml -n pygeogrids
     fi
