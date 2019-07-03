@@ -8,6 +8,9 @@ python:
   - "2.7"
   - "3.6"
   - "3.7"
+env:
+  - PINNED=true # use fixed dependencies
+  - PINNED=false # use latest dependencies
 install:
   # You may want to periodically update this, although the conda update
   # conda line below will keep everything up-to-date.  We do this
@@ -27,7 +30,15 @@ install:
   - conda info -a
 
   - conda create -n pygeogrids python=${TRAVIS_PYTHON_VERSION}
-  - conda env update -f environment.yml -n pygeogrids
+  - if $PINNED; then
+      if [[ "$TRAVIS_PYTHON_VERSION" == "2.7" ]]; then
+        conda env update -f environment_pinned_py2.yml -n pygeogrids
+      else
+        conda env update -f environment_pinned_py3.yml -n pygeogrids
+    else
+        conda env update -f environment.yml -n pygeogrids
+    fi
+    
   - source activate pygeogrids
   - python setup.py install
 
