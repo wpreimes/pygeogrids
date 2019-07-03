@@ -30,7 +30,7 @@ install:
   - conda info -a
 
   - conda create -n pygeogrids python=${TRAVIS_PYTHON_VERSION}
-  - if [[ "$PINNED" == "TRUE"]]; then
+  - if [[ "$PINNED" == "TRUE" ]]; then
       if [[ "$TRAVIS_PYTHON_VERSION" == "2.7" ]]; then
         conda env update -f environment_pinned_py2.yml -n pygeogrids;
       else
