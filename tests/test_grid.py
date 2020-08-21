@@ -283,7 +283,7 @@ class TestCellGridNotGpiDirectSubset(unittest.TestCase):
 
     """Setup simple 2D grid 2.5 degree global grid (144x72) which starts at the
     North Western corner of 90 -180 Test for cell specific features. This grid
-    also has a subset with only the first half of points active.
+    also has a subset with only the first half of points active_subset.
     """
 
     def setUp(self):

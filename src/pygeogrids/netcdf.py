@@ -33,15 +33,22 @@ from netCDF4 import Dataset
 import numpy as np
 import os
 from datetime import datetime
-from pygeogrids import CellGrid, BasicGrid
+from collections import Iterable
 
+def filled_no_mask(arr):
+    """ Fill a masked array with a valid mask """
+    if isinstance(arr, np.ma.masked_array):
+        if not np.ma.is_masked(arr):
+            arr = arr.filled()
+    return arr
 
 def save_lonlat(filename, arrlon, arrlat, geodatum, arrcell=None,
                 gpis=None, subsets={}, global_attrs=None,
                 format='NETCDF4',
                 zlib=False,
                 complevel=4,
-                shuffle=True):
+                shuffle=True,
+                var_attrs=None):
     """
     saves grid information to netCDF file
 
@@ -79,7 +86,12 @@ def save_lonlat(filename, arrlon, arrlat, geodatum, arrcell=None,
         see netCDF documentation
     complevel: int, opational
         see netCDF documentation
+    var_attrs : dict of dicts, optional (default: None)
+        Additional attributes that are stored with the variable
+        format: {var_name: {attr_name: attr_value, ...} ... }
     """
+    if var_attrs is None:
+        var_attrs = {}
 
     with Dataset(filename, 'w', format=format) as ncfile:
 
@@ -87,8 +99,8 @@ def save_lonlat(filename, arrlon, arrlat, geodatum, arrcell=None,
                 type(global_attrs['shape']) is not int and
                 len(global_attrs['shape']) == 2):
 
-            latsize = global_attrs['shape'][1]
-            lonsize = global_attrs['shape'][0]
+            latsize = global_attrs['shape'][0]
+            lonsize = global_attrs['shape'][1]
             ncfile.createDimension("lat", latsize)
             ncfile.createDimension("lon", lonsize)
             gpisize = global_attrs['shape'][0] * global_attrs['shape'][1]
@@ -129,6 +141,8 @@ def save_lonlat(filename, arrlon, arrlat, geodatum, arrcell=None,
         setattr(crs, 'semi_major_axis', geodatum.geod.a)
         setattr(crs, 'inverse_flattening', 1. / geodatum.geod.f)
         setattr(crs, 'ellipsoid_name', geodatum.name)
+        if 'crs' in var_attrs.keys():
+            crs.setncattrs(var_attrs['crs'])
 
         gpi = ncfile.createVariable('gpi', np.dtype('int32').char, dim,
                                     shuffle=shuffle,
@@ -147,6 +161,9 @@ def save_lonlat(filename, arrlon, arrlat, geodatum, arrcell=None,
             setattr(gpi, 'valid_range', [np.min(gpivalues), np.max(gpivalues)])
             gpidirect = 0x0b
 
+        if 'gpi' in var_attrs.keys():
+            gpi.setncattrs(var_attrs['gpi'])
+
         latitude = ncfile.createVariable('lat', np.dtype('float64').char,
                                          dim[0],
                                          shuffle=shuffle,
@@ -156,6 +173,9 @@ def save_lonlat(filename, arrlon, arrlat, geodatum, arrcell=None,
         setattr(latitude, 'units', 'degree_north')
         setattr(latitude, 'standard_name', 'latitude')
         setattr(latitude, 'valid_range', [-90.0, 90.0])
+
+        if 'lat' in var_attrs.keys():
+            latitude.setncattrs(var_attrs['lat'])
 
         if len(dim) == 2:
             londim = dim[1]
@@ -170,6 +190,9 @@ def save_lonlat(filename, arrlon, arrlat, geodatum, arrcell=None,
         setattr(longitude, 'units', 'degree_east')
         setattr(longitude, 'standard_name', 'longitude')
         setattr(longitude, 'valid_range', [-180.0, 180.0])
+
+        if 'lon' in var_attrs.keys():
+            longitude.setncattrs(var_attrs['lon'])
 
         if arrcell is not None:
             cell = ncfile.createVariable('cell', np.dtype('int16').char,
@@ -186,9 +209,21 @@ def save_lonlat(filename, arrlon, arrlat, geodatum, arrcell=None,
             setattr(cell, 'units', '')
             setattr(cell, 'valid_range', [np.min(arrcell), np.max(arrcell)])
 
+            if 'cell' in var_attrs.keys():
+                cell.setncattrs(var_attrs['cell'])
+
         if subsets:
             for subset_name in subsets.keys():
-                flag = ncfile.createVariable(subset_name, np.dtype('int8').char,
+                value = subsets[subset_name]['value']
+
+                if np.max(value) < 128:
+                    dtype = np.dtype('int8').char
+                    flag_val_dtype = np.int8
+                else:
+                    dtype = np.dtype('int16').char
+                    flag_val_dtype = np.int16
+
+                flag = ncfile.createVariable(subset_name, dtype,
                                              dim,
                                              shuffle=shuffle,
                                              zlib=zlib, complevel=complevel)
@@ -197,7 +232,6 @@ def save_lonlat(filename, arrlon, arrlat, geodatum, arrcell=None,
                 lf = np.zeros_like(gpivalues)
                 if len(dim) == 2:
                     lf = lf.flatten()
-                value = subsets[subset_name]['value']
                 lf[subsets[subset_name]['points']] = value
                 if len(dim) == 2:
                     lf = lf.reshape(latsize, lonsize)
@@ -207,9 +241,15 @@ def save_lonlat(filename, arrlon, arrlat, geodatum, arrcell=None,
                 setattr(flag, 'long_name', subset_name)
                 setattr(flag, 'units', '')
                 setattr(flag, 'coordinates', 'lat lon')
-                setattr(flag, 'flag_values', np.arange(2, dtype=np.int8))
-                setattr(flag, 'flag_meanings', subsets[subset_name]['meaning'])
-                setattr(flag, 'valid_range', [0, value])
+                flag_vals = np.array(np.concatenate(([0], sorted(np.unique(value)))),
+                                     dtype=flag_val_dtype)
+                setattr(flag, 'flag_values', flag_vals)
+                meaning = subsets[subset_name]['meaning']
+                setattr(flag, 'flag_meanings', '' if meaning is None else meaning)
+                setattr(flag, 'valid_range', [0, max(value) if isinstance(value, Iterable) else value])
+
+                if subset_name in var_attrs.keys():
+                    flag.setncatts(var_attrs[subset_name])
 
         s = "%Y-%m-%d %H:%M:%S"
         date_created = datetime.now().strftime(s)
@@ -311,9 +351,13 @@ def save_grid(filename, grid, subset_name='subset_flag', subset_value=1.,
             global_attrs = {}
         global_attrs['shape'] = grid.shape
 
+    global_attrs['grid_type'] = grid.__class__.__name__
+
     if grid.subset is not None:
         subsets = {subset_name: {
-            'points': grid.subset, 'meaning': subset_meaning, 'value': subset_value}}
+            'points': grid.subset,
+            'meaning': subset_meaning,
+            'value': subset_value}}
     else:
         subsets = None
 
@@ -322,10 +366,74 @@ def save_grid(filename, grid, subset_name='subset_flag', subset_value=1.,
                 global_attrs=global_attrs)
 
 
+def load_grid_definition(filename, location_var_name='gpi', subsets:dict=None):
+
+    with Dataset(filename, 'r') as nc_data:
+        # determine if it is a cell grid or a basic grid
+        arrcell = None
+        if 'cell' in nc_data.variables.keys():
+            arrcell = nc_data.variables['cell'][:].flatten()
+            arrcell = filled_no_mask(arrcell)
+
+        gpis = nc_data.variables[location_var_name][:].flatten()
+        gpis = filled_no_mask(gpis)
+
+        shape = None
+        if hasattr(nc_data, 'shape'):
+            try:
+                shape = tuple(nc_data.shape)
+            except TypeError as e:
+                try:
+                    length = len(nc_data.shape)
+                except TypeError:
+                    length = nc_data.shape.size
+                if length == 1:
+                    shape = tuple([nc_data.shape])
+                else:
+                    raise e
+
+        # some old grid do not have a shape attribute
+        # this meant that they had shape of len 1
+        if shape is None:
+            shape = tuple([len(nc_data.variables['lon'][:])])
+
+        # check if grid has regular shape
+        if len(shape) == 2:
+            lons, lats = np.meshgrid(nc_data.variables['lon'][:],
+                                     nc_data.variables['lat'][:])
+            lons = lons.flatten()
+            lats = lats.flatten()
+
+        elif len(shape) == 1:
+            lons = nc_data.variables['lon'][:]
+            lats = nc_data.variables['lat'][:]
+
+        # covert masked arrays without mask to arrays
+        lons = filled_no_mask(lons)
+        lats = filled_no_mask(lats)
+
+        # determine if it has a subset
+        subset_info = {}
+        if subsets is not None:
+            for subset_flag, subset_value in subsets.items():
+                if subset_flag in nc_data.variables.keys():
+                    subset_vals = nc_data.variables[subset_flag][:].flatten()
+                    subset = np.where(np.isin(subset_vals, subset_value))[0]
+                    subset_info[subset_flag] = {'gpis': filled_no_mask(subset),
+                                                'values': filled_no_mask(subset_vals[subset])}
+
+        if 'crs' in nc_data.variables:
+            geodatumName = nc_data.variables['crs'].getncattr('ellipsoid_name')
+        else:
+            # ellipsoid information is missing, use WGS84 by default
+            geodatumName = 'WGS84'
+
+    return lons, lats, gpis, arrcell, subset_info, geodatumName, shape
+
 def load_grid(filename, subset_flag='subset_flag', subset_value=1,
               location_var_name='gpi'):
     """
-    load a grid from netCDF file
+    load a grid from netCDF file, only for basic or cell grids
 
     Parameters
     ----------
@@ -344,75 +452,60 @@ def load_grid(filename, subset_flag='subset_flag', subset_value=1,
     grid : BasicGrid or CellGrid instance
         grid instance initialized with the loaded data
     """
+    from pygeogrids import CellGrid, BasicGrid
 
-    with Dataset(filename, 'r') as nc_data:
-        # determine if it is a cell grid or a basic grid
-        arrcell = None
-        if 'cell' in nc_data.variables.keys():
-            arrcell = nc_data.variables['cell'][:].flatten()
+    subsets = {subset_flag: subset_value}
 
-        gpis = nc_data.variables[location_var_name][:].flatten()
+    lons, lats, gpis, arrcell, subsets, geodatumName, shape = \
+        load_grid_definition(filename, location_var_name, subsets)
 
-        shape = None
-        if hasattr(nc_data, 'shape'):
-            try:
-                shape = tuple(nc_data.shape)
-            except TypeError as e:
-                try:
-                    length = len(nc_data.shape)
-                except TypeError:
-                    length = nc_data.shape.size
-                if length == 1:
-                    shape = tuple([nc_data.shape])
-                else:
-                    raise e
+    subset = subsets[subset_flag]['gpis'] if subset_flag in subsets.keys() else None
 
-        subset = None
-        # some old grid do not have a shape attribute
-        # this meant that they had shape of len 1
-        if shape is None:
-            shape = tuple([len(nc_data.variables['lon'][:])])
+    if arrcell is None:
+        # BasicGrid
+        return BasicGrid(lons,
+                         lats,
+                         gpis=gpis,
+                         geodatum=geodatumName,
+                         subset=subset,
+                         shape=shape)
+    else:
+        # CellGrid
+        return CellGrid(lons,
+                        lats,
+                        arrcell,
+                        gpis=gpis,
+                        geodatum=geodatumName,
+                        subset=subset,
+                        shape=shape)
 
-        # check if grid has regular shape
-        if len(shape) == 2:
-            lons, lats = np.meshgrid(nc_data.variables['lon'][:],
-                                     nc_data.variables['lat'][:])
-            lons = lons.flatten()
-            lats = lats.flatten()
 
-            if subset_flag in nc_data.variables.keys():
-                subset = np.where(
-                    np.isin(nc_data.variables[subset_flag][:].flatten(), subset_value))[0]
 
-        elif len(shape) == 1:
-            lons = nc_data.variables['lon'][:]
-            lats = nc_data.variables['lat'][:]
+if __name__ == '__main__':
+    from pygeogrids.grids import BasicGrid, MetaGrid, CellGrid
 
-            # determine if it has a subset
-            if subset_flag in nc_data.variables.keys():
-                subset = np.where(
-                    np.isin(nc_data.variables[subset_flag][:].flatten(), subset_value))[0]
+    grid = MetaGrid.load_grid(r"C:\Temp\ssc\metagrid.nc")
 
-        if 'crs' in nc_data.variables:
-            geodatumName = nc_data.variables['crs'].getncattr('ellipsoid_name')
-        else:
-            # ellipsoid information is missing, use WGS84 by default
-            geodatumName = 'WGS84'
 
-        if arrcell is None:
-            # BasicGrid
-            return BasicGrid(lons,
-                             lats,
-                             gpis=gpis,
-                             geodatum=geodatumName,
-                             subset=subset,
-                             shape=shape)
-        else:
-            # CellGrid
-            return CellGrid(lons,
-                            lats,
-                            arrcell,
-                            gpis=gpis,
-                            geodatum=geodatumName,
-                            subset=subset,
-                            shape=shape)
+    from pygeogrids.subsets import Subset
+    lons = range(-179,179,1)
+    lats = range(-89,90,1)
+    lons, lats = np.meshgrid(lons, lats)
+    subsets = [Subset('test', range(1000,2000,1))]
+
+    grid = MetaGrid(lon=lons.flatten(), lat=lats.flatten(), subsets=subsets)
+    grid.subset_from_bbox(-10,10,-20,20, name='box1', values=1)
+    grid.subset_from_bbox(-15,5,-25,5, name='box2', values=2)
+
+    grid.combine_subsets(names=['box1', 'box2'], new_name='box_inter', values=17)
+    grid.merge_subsets(names=['box1', 'box2'], new_name='merged', keep=True)
+
+    print(isinstance(grid, MetaGrid))
+    save_grid('C:\Temp\ssc\metagrid.nc', grid)
+    pass
+
+    basicgrid = load_grid('C:\Temp\grids\metagrid.nc', subset_flag='merged',
+                     subset_value=2)
+
+    basicgrid = load_grid('C:\Temp\ssc\metagrid.nc', subset_flag='merged',
+                     subset_value=2)

@@ -44,7 +44,9 @@ except ImportError:
 
 import pygeogrids.nearest_neighbor as NN
 from pygeogrids.geodetic_datum import GeodeticDatum
-
+from pygeogrids.subset import SubsetCollection, Subset
+from netCDF4 import Dataset
+from pygeogrids.netcdf import load_grid_definition, filled_no_mask, save_lonlat
 
 class GridDefinitionError(Exception):
     pass
@@ -76,7 +78,7 @@ class BasicGrid(object):
         if no array is given here the lon lat arrays are given
         gpi numbers starting at 0
     subset : numpy.array, optional
-        if the active part of the array is only a subset of
+        if the active_subset part of the array is only a subset of
         all the points then the subset array which is a index
         into lon and lat can be given here.
     setup_kdTree : boolean, optional
@@ -114,17 +116,17 @@ class BasicGrid(object):
         interesting for a application. e.g. land points, or only
         a specific country
     allpoints : boolean
-        if False only a subset of the grid is active
+        if False only a subset of the grid is active_subset
     activearrlon : numpy.array
-        array of longitudes that are active, is defined by
+        array of longitudes that are active_subset, is defined by
         arrlon[subset] if a subset is given otherwise equal to
         arrlon
     activearrlat : numpy.array
-        array of latitudes that are active, is defined by
+        array of latitudes that are active_subset, is defined by
         arrlat[subset] if a subset is given otherwise equal to
         arrlat
     activegpis : numpy.array
-        array of gpis that are active, is defined by
+        array of gpis that are active_subset, is defined by
         gpis[subset] if a subset is given otherwise equal to
         gpis
     geodatum : object
@@ -207,15 +209,9 @@ class BasicGrid(object):
         self.subset = subset
 
         if subset is not None:
-            self.activearrlon = self.arrlon[subset]
-            self.activearrlat = self.arrlat[subset]
-            self.activegpis = self.gpis[subset]
-            self.allpoints = False
+            self._create_subset(subset)
         else:
-            self.activearrlon = self.arrlon
-            self.activearrlat = self.arrlat
-            self.activegpis = self.gpis
-            self.allpoints = True
+            self._empty_subset()
 
         self.issplit = False
 
@@ -231,6 +227,55 @@ class BasicGrid(object):
             self.kdTree = NN.findGeoNN(self.activearrlon, self.activearrlat,
                                        self.geodatum)
             self.kdTree._build_kdtree()
+
+    def _create_subset(self, subset):
+        # Create
+        self.activearrlon = self.arrlon[subset]
+        self.activearrlat = self.arrlat[subset]
+        self.activegpis = self.gpis[subset]
+        self.allpoints = False
+
+    def _empty_subset(self):
+        self.activearrlon = self.arrlon
+        self.activearrlat = self.arrlat
+        self.activegpis = self.gpis
+        self.allpoints = True
+
+
+    @classmethod
+    def from_file(cls, filename, subset_flag='subset_flag', subset_value=1,
+                  location_var_name='gpi'):
+        """
+        load a grid from netCDF file, only for basic or cell grids
+
+        Parameters
+        ----------
+        filename : str
+            Path to netcdf file to load.
+        subset_flag : str, optional (default: 'subset_flag')
+            name of the subset to load.
+        subset_value : int or list, optional (default: 1)
+            Value(s) of the subset variable that points are loaded for.
+        location_var_name: str, optional (default: 'gpi')
+            variable name under which the grid point locations
+            are stored
+
+        Returns
+        -------
+        grid : BasicGrid
+            grid instance initialized with the loaded data
+        """
+        subsets = {subset_flag: subset_value}
+
+        lons, lats, gpis, _, subsets, geodatumName, shape = \
+            load_grid_definition(filename, location_var_name, subsets)
+
+        return cls(lons,
+                   lats,
+                   gpis=gpis,
+                   geodatum=geodatumName,
+                   subset=subsets[subset_flag]['gpis'],
+                   shape=shape)
 
     def split(self, n):
         """
@@ -287,7 +332,7 @@ class BasicGrid(object):
 
     def get_grid_points(self, *args):
         """
-        Returns all active grid points.
+        Returns all active_subset grid points.
 
         Parameters
         ----------
@@ -746,7 +791,6 @@ class BasicGrid(object):
         return np.all([lonsame, latsame, gpisame, subsetsame, shapesame,
                        geosame])
 
-
 class CellGrid(BasicGrid):
 
     """
@@ -768,7 +812,7 @@ class CellGrid(BasicGrid):
         If the gpi numbers are in a different order than the lon and lat
         arrays an array containing the gpi numbers can be given.
     subset : numpy.array, optional
-        If the active part of the array is only a subset of all the points
+        If the active_subset part of the array is only a subset of all the points
         then the subset array which is a index into lon, lat and cells can
         be given here.
 
@@ -777,7 +821,7 @@ class CellGrid(BasicGrid):
     arrcell : numpy.ndarray
         Array of cell number with same shape as arrlon, arrlat.
     activearrcell : numpy.ndarray
-        Array of longitudes that are active, is defined by arrlon[subset]
+        Array of longitudes that are active_subset, is defined by arrlon[subset]
         if a subset is given otherwise equal to arrlon.
     """
 
@@ -800,6 +844,42 @@ class CellGrid(BasicGrid):
             self.activearrcell = self.arrcell[subset]
         else:
             self.activearrcell = self.arrcell
+
+    @classmethod
+    def from_file(cls, filename, subset_flag='subset_flag', subset_value=1,
+                  location_var_name='gpi'):
+        """
+        load a cell grid from netCDF file
+
+        Parameters
+        ----------
+        filename : string
+            filename
+        subset_flag : string, optional (default: 'subset_flag')
+            name of the subset to load.
+        subset_value : int or list, optional (default: 1)
+            Value(s) of the subset variable that points are loaded for.
+        location_var_name: string, optional (default: 'gpi')
+            variable name under which the grid point locations
+            are stored
+
+        Returns
+        -------
+        grid : CellGrid
+            grid instance initialized with the loaded data
+        """
+        subsets = {subset_flag: subset_value}
+
+        lons, lats, gpis, arrcell, subsets, geodatumName, shape = \
+            load_grid_definition(filename, location_var_name, subsets)
+
+        return cls(lons,
+                   lats,
+                   arrcell,
+                   gpis=gpis,
+                   geodatum=geodatumName,
+                   subset=subsets[subset_flag]['gpis'],
+                   shape=shape)
 
     def gpi2cell(self, gpi):
         """
@@ -846,7 +926,7 @@ class CellGrid(BasicGrid):
 
     def get_grid_points(self, *args):
         """
-        Returns all active grid points.
+        Returns all active_subset grid points.
 
         Parameters
         ----------
@@ -1039,6 +1119,379 @@ class CellGrid(BasicGrid):
                           == other.arrcell[idx_gpi_other])
         return np.all([basicsame, cellsame])
 
+class MetaGrid(CellGrid):
+    """
+    MetaGrid is a version of a Basic or CellGrid that contains a subset collection
+    to quickly create, activate, combine and store multiple subsets.
+    """
+
+    # todo: shape is not intuitive should be (lat,lon(, but is (lon,lat)... this is a BasicGrid Problme
+    #
+
+    def __init__(self, lon, lat, cells=None, gpis=None, geodatum='WGS84',
+                 setup_kdTree=True, shape=None, subsets=None):
+        """
+
+        Parameters
+        ----------
+        lon : numpy.ndarray
+            Longitudes of the points in the grid.
+        lat : numpy.ndarray
+            Latitudes of the points in the grid.
+        cells : numpy.ndarray
+            Of same shape as lon and lat, containing the cell number of each gpi.
+        gpis : numpy.array, optional
+            if the gpi numbers are in a different order than the
+            lon and lat arrays an array containing the gpi numbers
+            can be given
+            if no array is given here the lon lat arrays are given
+            gpi numbers starting at 0
+        geodatum : basestring
+            Name of the geodatic datum associated with the grid
+        setup_kdTree : boolean, optional
+            if set (default) then the kdTree for nearest neighbour
+            search will be built on initialization
+        shape : tuple, optional
+            The shape of the grid array in 2-d space.
+            e.g. for a 1x1 degree global regular grid the shape would be (180,360).
+            if given the grid can be reshaped into the given shape
+            this indicates that it is a regular grid and fills the
+            attributes self.lon2d and self.lat2d which
+            define the grid only be the meridian coordinates(self.lon2d) and
+            the coordinates of the circles of latitude(self.lat2d).
+            The shape has to be given as (lat2d, lon2d) # todo: this is wrong?
+            It it is not given the shape is set to the length of the input
+            lon and lat arrays.
+            # todo: shape is not intuitive....
+
+        shape : tuple, optional (default: None)
+            Number of elements in the grid in a 2d array. Order: (lon, lat)
+        subsets : list, optional (default: None)
+            A list of pygeogrids.subset.Subsets that are assigned to the grid
+            upon initialisation or a pygeogrids.subset.SubsetCollection.
+        """
+        self._init_base_grid(lon, lat, cells, gpis, geodatum, setup_kdTree, shape)
+
+        self.active_subset = None # active_subset subset, set by activate()
+
+        if isinstance(subsets, SubsetCollection):
+            self.subsets = subsets
+        else:
+            self.subsets = SubsetCollection(subsets=subsets)
+
+        # fill value has to match with the value from save_lonlat(), i.e. 0!
+        # Therefore this can't be changed for now.
+        self.subsets_fill_value = 0
+
+    def __eq__(self, other):
+        """ Compare grids and subset collections """
+        basicsame = super(MetaGrid, self).__eq__(other)
+        subsetsame = self.subsets == other.subset_coll
+        return all([basicsame, subsetsame])
+
+    def _init_base_grid(self, lon, lat, cells, gpis, geodatum, setup_kdTree,
+                         shape):
+        # NO subset is active_subset upon initialisation !!
+        # Can be either a BasicGrid or a CellGrid, depending on cells.
+
+        if cells is None: # Inherit from BasicGrid
+            super(CellGrid, self).__init__(lon=lon, lat=lat, gpis=gpis,
+                               geodatum=geodatum, setup_kdTree=setup_kdTree,
+                               subset=None, shape=shape)
+        else: # Inherit from CellGrid
+            super(MetaGrid, self).__init__(lon=lon, lat=lat, gpis=gpis, cells=cells,
+                              geodatum=geodatum, setup_kdTree=setup_kdTree,
+                              subset=None, shape=shape)
+
+    @property
+    def subset_names(self):
+        return self.subsets.names
+
+    @classmethod
+    def load_grid(cls, filename, location_var_name='gpi', subsets='all'):
+        """
+        Load meta grid with the selected subsets from file.
+
+        Parameters
+        ----------
+        filename : str
+            Path to the grid nc file.
+        location_var_name : str, optional (default: 'gpi')
+            Name of the index variable
+        subsets : dict or list, optional (default: 'all')
+            as dict: {name1: [values1], ...}
+            as list: [name1, name2,...]
+            Subset names or subset names and a list of values to consider.
+            If 'all' is passed, all variables (except the reserved_names) are
+            interpreted as subsets.
+
+        Returns
+        -------
+        grid : MetaGrid
+            A MetaGrid with a subset collection loaded from file
+        """
+
+        # Variables and variable values that are always ignored
+        reserved_names = ['lon', 'lat', location_var_name, 'crs', 'cells']
+        fill_value = 0
+
+        def subset_defs(filter_subsets=()) -> dict:
+            definitions = {}
+            with Dataset(filename, 'r') as nc_data:
+                for var in nc_data.variables:
+                    if var in reserved_names: continue
+                    if var in filter_subsets: continue
+                    subset = filled_no_mask(np.unique(nc_data.variables[var][:]))
+                    definitions[var] = np.delete(subset, fill_value)
+            return definitions
+
+        if subsets is None:
+            definitions = None
+        elif subsets.lower() == 'all':
+            definitions = subset_defs()
+        else:
+            filter_subsets = subsets
+            definitions = subset_defs(filter_subsets=filter_subsets)
+
+        lons, lats, gpis, arrcell, subsets_kwargs, geodatumName, shape = \
+            load_grid_definition(filename, location_var_name, subsets=definitions)
+
+        subsets = []
+        for name, kwargs in subsets_kwargs.items():
+            subsets.append(Subset(name, **kwargs))
+
+        return cls(lons,
+                   lats,
+                   gpis=gpis,
+                   cells=arrcell,
+                   geodatum=geodatumName,
+                   setup_kdTree=True,
+                   shape=shape,
+                   subsets=subsets)
+
+    def subsets_as_dicts(self, format='all'):
+        """
+        Return subset points as a dictionary.
+
+        Parameters
+        ----------
+        format : str
+            See the description of Subset.to_dict()
+            one of: all, save_lonlat, gpis
+
+        Returns
+        -------
+        subset_dict : dict
+            Dict of subset points in the selected format.
+        """
+
+        subset_dicts = {}
+        for subset in self.subsets:
+            subset_dicts.update(subset.as_dict(format))
+
+        return subset_dicts
+
+    def save_grid(self, filename, global_attrs=None, var_attrs=None):
+        """
+        Save MetaGrid and all subsets to netcdf file.
+
+        Parameters
+        ----------
+        filename : str
+            Path where the .nc file is created.
+        global_attrs : dict, optional (default: None)
+            Additional global attributes that are passed when writing the nc
+            file.
+        var_attrs : dict of dicts, optional (default: None)
+            Additional attributes that are stored with the variable
+            format: {var_name: {attr_name: attr_value, ...} ... }
+        """
+
+        try:
+            arrcell = self.arrcell
+        except AttributeError:
+            arrcell = None
+
+        gpis = self.gpis
+
+        if self.shape is not None:
+            if global_attrs is None:
+                global_attrs = {}
+            global_attrs['shape'] = self.shape
+
+        global_attrs['grid_type'] = self.__class__.__name__ # MetaGrid
+
+        subset_dicts = None
+        if not self.subsets.empty:
+            subset_dicts = self.subsets_as_dicts(format='save_lonlat')
+
+        save_lonlat(filename, self.arrlon, self.arrlat, self.geodatum,
+                    arrcell=arrcell, gpis=gpis, subsets=subset_dicts, zlib=True,
+                    global_attrs=global_attrs, var_attrs=var_attrs)
+
+    def add_subset(self, subset:Subset):
+        """
+        Add a new subset to the subset collection
+        """
+        self.subsets.add(subset)
+
+    def subset_from_bbox(self, latmin=-90, latmax=90, lonmin=-180, lonmax=180,
+                         name=None, **subset_kwargs):
+        """
+        Create a new subset from a bounding box and add it to the collection.
+
+        Parameters
+        ----------
+        latmin : float
+            Lat of the lower left corner of the bbox
+        latmax : float
+            Lat of the upper right corner of the bbox
+        lonmin : float
+            Lon of the lower left corner of the bbox
+        lonmax : float
+            Lon of the upper right corner of the bbox
+        name : str
+            Name of the subset, if None is passed a name is generated from the
+            bbox
+        subset_kwargs :
+            Additional keywords are passed to the subset generation
+        """
+
+        gpis = self.get_bbox_grid_points(latmin, latmax, lonmin, lonmax)
+
+        if name is None:
+            name = f"bbox_{'_'.join([str(f) for f in [latmin, latmax, lonmin, lonmax]])}"
+
+        self.add_subset(Subset(name, gpis, **subset_kwargs))
+
+    def filter_subset(self, vals:{int:list}, **subset_kwargs) -> Subset:
+        """
+        Create a new subset from the currently active one by filtering them with
+        the passed values.
+        """
+        if self.active_subset is None:
+            raise ValueError('No subset active to be filtered. '
+                             'Activate one with activate_subset(<name>)')
+        else:
+            subset = self.active_subset
+
+        return subset.filter_vals(vals, **subset_kwargs)
+
+
+    def deactivate_subset(self):
+        """
+        Deactivate the current subset. I.e. go back to the initialisation state.
+        Also revert splitting if any splitting was performed.
+        """
+
+        self.activearrlon = self.arrlon
+        self.activearrlat = self.arrlat
+        self.activegpis = self.gpis
+        self.allpoints = True
+        self.unite()
+
+    def activate_subset(self, name, vals=None):
+        """
+        Activate a subset from the collection. Only one subset can be active_subset at
+        a time.
+
+        Parameters
+        ----------
+        name : str
+            Name of the subset to activate, must be in the collection.
+        vals : {int,float,list}
+            Subset values are filtered for these values directly. without creating
+            a new subset
+        """
+
+        subset = self.subsets[name]
+        if vals is not None:
+            subset = subset.filter_vals(vals)
+
+        self.active_subset = subset
+
+        subset_gpis = self.active_subset.gpis
+
+        self.activearrlon = self.arrlon[subset_gpis]
+        self.activearrlat = self.arrlat[subset_gpis]
+        self.activegpis = self.gpis[subset_gpis]
+        self.allpoints = False
+
+        self.subset = subset_gpis
+
+    def combine_subsets(self, names, new_name, how='intersect', **subset_kwargs):
+        """
+        Combine two or more subsets and create a new one which is added to the
+        current subset collction.
+
+        Parameters
+        ----------
+        names : Iterable
+            List of names of subsets to combine
+        new_name : str
+            Name of the subset that is created
+        how : str, optional (default: 'intersect')
+            Name of a method to use to combine the subsets.
+        kwargs:
+        Additional kwargs are used when creating the new subset.
+        """
+
+        self.add_subset(self.subsets.combine(subset_names=names,
+                                             new_name=new_name,
+                                             how=how, **subset_kwargs))
+
+    def merge_subsets(self, names:list, new_name, layer_vals=None, keep_merged=True):
+        """
+        Merge multiple subsets into a single, new one. Merge down layers in
+        the given order. Optionally set a new value for each subset.
+        Points that are present in multiple merged subsets, will have
+        the value from the last merged subset.
+
+        Parameters
+        ----------
+        names : list
+            Names of subsets to merge. If a GPI is in multiple subsets,
+            the value of the later subset will be used.
+        new_name : str
+            Name of the new subset that is created. Must be different from
+            subsets that are already in the collection.
+        keep_merged : bool, optional (default: True)
+            Keep the original input subsets as well as the newly created one.
+        """
+
+        self.add_subset(self.subsets.merge(subset_names=names,
+                                           new_name=new_name,
+                                           new_vals=layer_vals,
+                                           keep=keep_merged))
+
+
+    def to_cell_grid(self, cellsize=5.0, cellsize_lat=None, cellsize_lon=None):
+        """
+        Convert this grid into a cellgrid with a cell partition of cellsize.
+
+        Parameters
+        ----------
+        cellsize : float, optional
+            Cell size in degrees
+        cellsize_lon : float, optional
+            Cell size in degrees on the longitude axis
+        cellsize_lat : float, optional
+            Cell size in degrees on the latitude axis
+        """
+
+        cells = lonlat2cell(self.arrlon, self.arrlat, cellsize=cellsize,
+                            cellsize_lat=cellsize_lat,
+                            cellsize_lon=cellsize_lon)
+
+        if self.gpidirect:
+            gpis = None
+        else:
+            gpis = self.gpis
+
+        self._init_base_grid(self.arrlon, self.arrlat, cells, gpis,
+                             geodatum=self.geodatum.name,
+                             setup_kdTree=True, shape=self.shape)
+
 
 def lonlat2cell(lon, lat, cellsize=5., cellsize_lon=None, cellsize_lat=None):
     """
@@ -1185,11 +1638,13 @@ def reorder_to_cellsize(grid, cellsize_lat, cellsize_lon):
     new_arrcell = grid.arrcell[cell_sort]
     new_gpis = grid.gpis[cell_sort]
     new_subset = None
+
     if grid.subset is not None:
         full_subset = np.zeros(new_arrlon.size)
         full_subset[grid.subset] = 1
         new_full_subset = full_subset[cell_sort]
         new_subset = np.where(new_full_subset == 1)[0]
+
     return CellGrid(new_arrlon, new_arrlat, new_arrcell,
                     gpis=new_gpis,
                     subset=new_subset)
