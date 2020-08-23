@@ -1190,7 +1190,7 @@ class MetaGrid(CellGrid):
         return all([basicsame, subsetsame])
 
     def _init_base_grid(self, lon, lat, cells, gpis, geodatum, setup_kdTree,
-                         shape):
+                        shape):
         # NO subset is active_subset upon initialisation !!
         # Can be either a BasicGrid or a CellGrid, depending on cells.
 
@@ -1329,11 +1329,22 @@ class MetaGrid(CellGrid):
                     arrcell=arrcell, gpis=gpis, subsets=subset_dicts, zlib=True,
                     global_attrs=global_attrs, var_attrs=var_attrs)
 
-    def add_subset(self, subset:Subset):
+    def add_subset(self, subset:{Subset,np.array}, name=None):
         """
-        Add a new subset to the subset collection
+        Add a new subset to the subset collection either from a list of GPIs
+        or from a Subset object.
         """
-        self.subsets.add(subset)
+        if isinstance(subset, Subset):
+            self.subsets.add(subset)
+            if name is not None:
+                self.subsets[subset.name].name = name
+        else:
+            if name is None:
+                i = 1
+                while f"subset{i}" in self.subset_names: i += 1
+                name = f"subset{i}"
+
+            self.subsets.add(Subset(gpis=subset, name=name))
 
     def subset_from_bbox(self, latmin=-90, latmax=90, lonmin=-180, lonmax=180,
                          name=None, **subset_kwargs):
@@ -1366,7 +1377,7 @@ class MetaGrid(CellGrid):
 
     def filter_subset(self, vals:{int:list}, **subset_kwargs) -> Subset:
         """
-        Create a new subset from the currently active one by filtering them with
+        Create a new subset from the currently active one by filtering with
         the passed values.
         """
         if self.active_subset is None:
@@ -1375,7 +1386,7 @@ class MetaGrid(CellGrid):
         else:
             subset = self.active_subset
 
-        return subset.filter_vals(vals, **subset_kwargs)
+        return subset.select_by_val(vals, **subset_kwargs)
 
 
     def deactivate_subset(self):
@@ -1406,7 +1417,7 @@ class MetaGrid(CellGrid):
 
         subset = self.subsets[name]
         if vals is not None:
-            subset = subset.filter_vals(vals)
+            subset = subset.select_by_val(vals)
 
         self.active_subset = subset
 
@@ -1648,3 +1659,18 @@ def reorder_to_cellsize(grid, cellsize_lat, cellsize_lon):
     return CellGrid(new_arrlon, new_arrlat, new_arrcell,
                     gpis=new_gpis,
                     subset=new_subset)
+
+if __name__ == '__main__':
+    from smecv_grid.grid import SMECV_Grid_v052
+    qdeg = SMECV_Grid_v052(None)
+    grid = MetaGrid(lon=qdeg.arrlon, lat=qdeg.arrlat, gpis=qdeg.gpis,
+                    cells=qdeg.arrcell, shape=(720,1440))
+    grid.add_subset(np.array(np.arange(720*200, 720*300)), name='line200_to_300')
+    land = Subset(gpis=SMECV_Grid_v052('land').activegpis, name='land')
+    grid.add_subset(land)
+
+    grid.subset_from_bbox(name='Europe', lonmin=-11.13,latmin=36.25,
+                          lonmax=32.91, latmax=59.14)
+
+    grid.save_grid('/tmp/grids/test.nc')
+

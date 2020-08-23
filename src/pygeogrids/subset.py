@@ -27,21 +27,19 @@ class Subset():
             shape values does not match the length of the GPIs passed.
         """
         self.name = name
+        gpis = np.asanyarray(gpis)
         idx = np.argsort(gpis)
         self.gpis = gpis[idx]
-        self.meaning = meaning
+        self.meaning = '' if meaning is None else meaning
 
         if isinstance(values, int):
             self.values = np.repeat(values, len(self.gpis))
-        elif isinstance(values, (np.ndarray, np.ma.masked_array)):
-            # issubclass(values.dtype.type, np.integer):
+        else:
+            values = np.asanyarray(values)
             if len(values) != len(gpis):
                 raise ValueError(f"Shape of values array does not match "
                                  f"to gpis with {len(gpis)} elements")
             self.values = values[idx]
-        else:
-            raise ValueError("Unexpected format for values, "
-                             "int or np.array of ints expected.")
 
         if shape is None:
             self.shape = (len(self.gpis),)
@@ -58,7 +56,7 @@ class Subset():
         try:
             assert self.name == other.name
             np.testing.assert_equal(self.gpis, other.gpis)
-            np.testing.assert_equal(self.values, other.value)
+            np.testing.assert_equal(self.values, other.values)
             assert self.meaning == other.meaning
             assert self.shape == other.shape
             return True
@@ -100,7 +98,7 @@ class Subset():
         else:
             raise ValueError(f"{format} is not a known format definiton")
 
-    def filter_vals(self, vals, **subset_kwargs):
+    def select_by_val(self, vals, **subset_kwargs):
         """
         Filter subset points to points with certain values
 
@@ -260,7 +258,7 @@ class SubsetCollection():
         else: # by name
             for s in self.subsets:
                 if s.name == item: return s
-        raise KeyError(f"No subset with name {item} found")
+        raise KeyError(f"No subset with name or index {item} found")
 
     def __eq__(self, other):
         """ Compare 2 collections for equal gpis in all subsets"""
