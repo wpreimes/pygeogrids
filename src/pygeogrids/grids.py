@@ -1202,8 +1202,7 @@ class MetaGrid(CellGrid):
         return self.subsets.names
 
     @classmethod
-    def load_grid(cls, filename, location_var_name='gpi', subsets='all',
-                  origin='lower_left'):
+    def load_grid(cls, filename, location_var_name='gpi', subsets='all'):
         """
         Load meta grid with the selected subsets from file.
 
