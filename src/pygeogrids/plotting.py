@@ -38,6 +38,34 @@ except ImportError:
 import numpy as np
 import pygeogrids.grids as grids
 
+def points_on_map(lons, lats, figsize=(12, 6), color='blue', imax=None,
+                  autozoom=True):
+    # create a simple scatter plot of points on a map
+    try:
+        import cartopy
+        import cartopy.crs as ccrs
+    except ImportError:
+        print("Plotting maps needs cartopy, install with 'conda install cartopy'")
+        return
+    data_crs = ccrs.PlateCarree()
+    if not imax:
+        plt.figure(num=None, figsize=figsize, facecolor='w', edgecolor='k')
+        imax = plt.axes(projection=ccrs.Robinson())
+    imax.coastlines(resolution='110m', color='black', linewidth=0.25)
+    imax.add_feature(cartopy.feature.BORDERS, linewidth=0.1, zorder=2)
+
+    llc, urc = (min(lons), min(lats)), (max(lons), max(lats))
+
+    if autozoom:
+        imax.set_extent([llc[0], urc[0], llc[1], urc[1]], crs=data_crs)
+    lon_interval = max([llc[0], urc[0]]) - min([llc[0], urc[0]])
+    markersize = 1.5 * (360 / lon_interval)
+
+    plt.scatter(lons, lats, s=markersize, zorder=3, transform=data_crs, color=color)
+
+    return imax
+
+
 
 def plot_cell_grid_partitioning(output,
                                 cellsize_lon=5.,
