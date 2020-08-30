@@ -259,6 +259,9 @@ class Subset():
 
         return Subset(name=new_name, gpis=gpis, **subset_kwargs)
 
+    def _apply(self, other, method, *args, **kwargs):
+        return self.__getattribute__(method)(other, *args, **kwargs)
+
 class SubsetCollection():
     """
     A SubsetCollection holds multiple subsets and provides functions to add,
@@ -456,7 +459,7 @@ class SubsetCollection():
             if s.name == name:
                 self.subsets.pop(i)
 
-    def combine(self, subset_names:list, new_name:str, how='intersect',
+    def combine(self, subset_names:list, new_name:str, method='intersect',
                 **subset_kwargs) -> Subset:
         """
         Combine 2 or more subsets, to get the common gpis. This is not the
@@ -470,7 +473,7 @@ class SubsetCollection():
         new_name : str, optional (default: None)
             Name of the new subset that is created. If None is passed, a name
             is created.
-        how : {'intersect', 'union', 'diff'}
+        method : {'intersect', 'union', 'diff'}
             An implemented method to combine subset.
             * intersect: Points that are in both subsets
             * union: Points that are in subset A or B
@@ -491,8 +494,8 @@ class SubsetCollection():
         subset = self[subset_names[0]]
 
         for i, other_name in enumerate(subset_names[1:]):
-            getattr(self, how.lower())(self[other_name], new_name=new_name,
-                                       **subset_kwargs)
+            subset = subset._apply(self[other_name], method, new_name=new_name,
+                                   **subset_kwargs)
 
         return subset
 

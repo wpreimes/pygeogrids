@@ -34,6 +34,9 @@ import numpy as np
 import os
 from datetime import datetime
 from collections import Iterable
+import matplotlib.pyplot as plt
+import warnings
+
 
 def filled_no_mask(arr):
     """ Fill a masked array with a valid mask """
@@ -478,34 +481,3 @@ def load_grid(filename, subset_flag='subset_flag', subset_value=1,
                         geodatum=geodatumName,
                         subset=subset,
                         shape=shape)
-
-
-
-if __name__ == '__main__':
-    from pygeogrids.grids import BasicGrid, MetaGrid, CellGrid
-
-    grid = MetaGrid.load_grid(r"C:\Temp\ssc\metagrid.nc")
-
-
-    from pygeogrids.subsets import Subset
-    lons = range(-179,179,1)
-    lats = range(-89,90,1)
-    lons, lats = np.meshgrid(lons, lats)
-    subsets = [Subset('test', range(1000,2000,1))]
-
-    grid = MetaGrid(lon=lons.flatten(), lat=lats.flatten(), subsets=subsets)
-    grid.subset_from_bbox(-10,10,-20,20, name='box1', values=1)
-    grid.subset_from_bbox(-15,5,-25,5, name='box2', values=2)
-
-    grid.combine_subsets(names=['box1', 'box2'], new_name='box_inter', values=17)
-    grid.merge_subsets(names=['box1', 'box2'], new_name='merged', keep=True)
-
-    print(isinstance(grid, MetaGrid))
-    save_grid('C:\Temp\ssc\metagrid.nc', grid)
-    pass
-
-    basicgrid = load_grid('C:\Temp\grids\metagrid.nc', subset_flag='merged',
-                     subset_value=2)
-
-    basicgrid = load_grid('C:\Temp\ssc\metagrid.nc', subset_flag='merged',
-                     subset_value=2)

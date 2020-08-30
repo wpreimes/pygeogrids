@@ -1138,8 +1138,9 @@ class MetaGrid(CellGrid):
             Longitudes of the points in the grid.
         lat : numpy.ndarray
             Latitudes of the points in the grid.
-        cells : numpy.ndarray
+        cells : numpy.ndarray, optional (default: None)
             Of same shape as lon and lat, containing the cell number of each gpi.
+            If None is given, a 5x5 deg cell sampling is chosen.
         gpis : numpy.array, optional
             if the gpi numbers are in a different order than the
             lon and lat arrays an array containing the gpi numbers
@@ -1170,7 +1171,14 @@ class MetaGrid(CellGrid):
             A list of pygeogrids.subset.Subsets that are assigned to the grid
             upon initialisation or a pygeogrids.subset.SubsetCollection.
         """
-        self._init_base_grid(lon, lat, cells, gpis, geodatum, setup_kdTree, shape)
+
+        if cells is None:
+            #todo: how to use BasicGrid or CellGrid? Black magic or refactor?
+            cells = np.repeat(0, len(lon))
+
+        super(MetaGrid, self).__init__(lon=lon, lat=lat, gpis=gpis, cells=cells,
+                              geodatum=geodatum, setup_kdTree=setup_kdTree,
+                              subset=None, shape=shape)
 
         self.active_subset = None # active_subset subset, set by activate()
 
@@ -1189,26 +1197,13 @@ class MetaGrid(CellGrid):
         subsetsame = self.subsets == other.subset_coll
         return all([basicsame, subsetsame])
 
-    def _init_base_grid(self, lon, lat, cells, gpis, geodatum, setup_kdTree,
-                        shape):
-        # NO subset is active_subset upon initialisation !!
-        # Can be either a BasicGrid or a CellGrid, depending on cells.
-
-        if cells is None: # Inherit from BasicGrid
-            super(CellGrid, self).__init__(lon=lon, lat=lat, gpis=gpis,
-                               geodatum=geodatum, setup_kdTree=setup_kdTree,
-                               subset=None, shape=shape)
-        else: # Inherit from CellGrid
-            super(MetaGrid, self).__init__(lon=lon, lat=lat, gpis=gpis, cells=cells,
-                              geodatum=geodatum, setup_kdTree=setup_kdTree,
-                              subset=None, shape=shape)
-
     @property
     def subset_names(self):
         return self.subsets.names
 
     @classmethod
-    def load_grid(cls, filename, location_var_name='gpi', subsets='all'):
+    def load_grid(cls, filename, location_var_name='gpi', subsets='all',
+                  origin='lower_left'):
         """
         Load meta grid with the selected subsets from file.
 
@@ -1354,6 +1349,7 @@ class MetaGrid(CellGrid):
                          name=None, **subset_kwargs):
         """
         Create a new subset from a bounding box and add it to the collection.
+        This applys to the currently active subset.
 
         Parameters
         ----------
@@ -1385,6 +1381,9 @@ class MetaGrid(CellGrid):
         Create a new subset from the currently active one by filtering with
         the passed values.
         """
+        # todo: rename to filter active
+        # todo create a similar fct subset_from_values(name, vals, new_name)
+        # todo: add name to select a ss instead of using the current one
         if self.active_subset is None:
             raise ValueError('No subset active to be filtered. '
                              'Activate one with activate_subset(<name>)')
@@ -1435,7 +1434,7 @@ class MetaGrid(CellGrid):
 
         self.subset = subset_gpis
 
-    def combine_subsets(self, names, new_name, how='intersect', **subset_kwargs):
+    def combine_subsets(self, names, new_name, method='intersect', **subset_kwargs):
         """
         Combine two or more subsets and create a new one which is added to the
         current subset collction.
@@ -1446,7 +1445,7 @@ class MetaGrid(CellGrid):
             List of names of subsets to combine
         new_name : str
             Name of the subset that is created
-        how : str, optional (default: 'intersect')
+        method : str, optional (default: 'intersect')
             Name of a method to use to combine the subsets.
         kwargs:
         Additional kwargs are used when creating the new subset.
@@ -1454,7 +1453,7 @@ class MetaGrid(CellGrid):
 
         self.add_subset(self.subsets.combine(subset_names=names,
                                              new_name=new_name,
-                                             how=how, **subset_kwargs))
+                                             method=method, **subset_kwargs))
 
     def merge_subsets(self, names:list, new_name, layer_vals=None, keep_merged=True):
         """
@@ -1480,33 +1479,22 @@ class MetaGrid(CellGrid):
                                            new_vals=layer_vals,
                                            keep=keep_merged))
 
+    def plot(self, plot_subset=True, plot_points=False):
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            print('Plotting needs matplotlib installed, which is not found')
+            return
+        from pygeogrids.plotting import points_on_map
+        imax = None
+        if plot_points:
+            imax = points_on_map(self.arrlon, self.arrlat, color='blue', imax=imax)
+        if plot_subset:
+            imax = points_on_map(self.activearrlon, self.activearrlat, color='green',
+                               imax=imax, autozoom=False if plot_points else True)
 
-    def to_cell_grid(self, cellsize=5.0, cellsize_lat=None, cellsize_lon=None):
-        """
-        Convert this grid into a cellgrid with a cell partition of cellsize.
+        return imax
 
-        Parameters
-        ----------
-        cellsize : float, optional
-            Cell size in degrees
-        cellsize_lon : float, optional
-            Cell size in degrees on the longitude axis
-        cellsize_lat : float, optional
-            Cell size in degrees on the latitude axis
-        """
-
-        cells = lonlat2cell(self.arrlon, self.arrlat, cellsize=cellsize,
-                            cellsize_lat=cellsize_lat,
-                            cellsize_lon=cellsize_lon)
-
-        if self.gpidirect:
-            gpis = None
-        else:
-            gpis = self.gpis
-
-        self._init_base_grid(self.arrlon, self.arrlat, cells, gpis,
-                             geodatum=self.geodatum.name,
-                             setup_kdTree=True, shape=self.shape)
 
 
 def lonlat2cell(lon, lat, cellsize=5., cellsize_lon=None, cellsize_lat=None):
@@ -1545,6 +1533,7 @@ def lonlat2cell(lon, lat, cellsize=5., cellsize_lon=None, cellsize_lat=None):
                  (np.double(360.0)) / cellsize_lon)
     cells = np.where(cells > max_cells - 1, cells - max_cells, cells)
     return np.int32(cells)
+
 
 
 def gridfromdims(londim, latdim, **kwargs):
@@ -1666,16 +1655,17 @@ def reorder_to_cellsize(grid, cellsize_lat, cellsize_lon):
                     subset=new_subset)
 
 if __name__ == '__main__':
-    from smecv_grid.grid import SMECV_Grid_v052
-    qdeg = SMECV_Grid_v052(None)
-    grid = MetaGrid(lon=qdeg.arrlon, lat=qdeg.arrlat, gpis=qdeg.gpis,
-                    cells=qdeg.arrcell, shape=(720,1440))
-    grid.add_subset(np.array(np.arange(720*200, 720*300)), name='line200_to_300')
-    land = Subset(gpis=SMECV_Grid_v052('land').activegpis, name='land')
-    grid.add_subset(land)
+    MetaGrid(lon=np.array([1,2,3]), lat=np.array([1,2,3]), gpis=np.array([1,2,3]))
 
-    grid.subset_from_bbox(name='Europe', lonmin=-11.13,latmin=36.25,
-                          lonmax=32.91, latmax=59.14)
+    from pygeogrids.netcdf import load_grid
+    grid = load_grid(r"D:\data-read\grids\qdeg_land_grid.nc")
 
-    grid.save_grid('/tmp/grids/test.nc')
+    grid = MetaGrid.load_grid(r"C:\Temp\ssc\final.nc")
 
+    grid.save_grid(r"C:\Temp\ssc\test.nc")
+    grid.to_cell_grid(5.)
+    grid.save_grid(r"C:\Temp\ssc\final_cell.nc")
+
+
+
+    grid.get_grid_points()
