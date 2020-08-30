@@ -9,7 +9,7 @@ class Subset():
     """
     A subset is an arbitrary group of GPIs on a grid (e.g. land points etc.).
     """
-    def __init__(self, name, gpis, meaning='', values=1, shape=None):
+    def __init__(self, name, gpis, meaning='', values=1, attrs=None):
         # todo: sort GPIs when creating subset?
         """
         Parameters
@@ -18,18 +18,31 @@ class Subset():
             Name of the subset
         gpis : np.array
             Array of GPIs that identify the subset in a grid
+            Can be a 1d ar a 2d array, this affects the shape attribute but are
+            always stored as a sorted 1d array.
         meaning : str, optional (default: '')
             Short description of the points in the subset.
         values : int or np.array, optional (default: 1)
             Integer values that represent the subset in the variable.
-        shape : tuple, optional (default: None)
-            Shape information stored with the subset. Warns if the product of the
-            shape values does not match the length of the GPIs passed.
+        attrs : dict, optional (default: None)
+            Attributes that are stored together with the subset.
+            Attributes are not compared in __eq__
         """
-        self.name = name
         gpis = np.asanyarray(gpis)
+
+        self.name = name
+
+        if gpis.ndim == 1:
+            self.shape = (len(gpis),)
+        elif gpis.ndim == 2:
+            self.shape = gpis.shape
+            gpis = gpis.flatten()
+        else:
+            raise ValueError("GPIs must be passed as 1d or 2d array")
+
         idx = np.argsort(gpis)
         self.gpis = gpis[idx]
+
         self.meaning = '' if meaning is None else meaning
 
         if isinstance(values, int):
@@ -41,24 +54,15 @@ class Subset():
                                  f"to gpis with {len(gpis)} elements")
             self.values = values[idx]
 
-        if shape is None:
-            self.shape = (len(self.gpis),)
-        else:
-            if not isinstance(shape, Iterable):
-                shape = (shape,)
-
-            if np.prod(shape) != len(self.gpis):
-                warnings.warn("Shape does not match to the number of GPIs.")
-
-            self.shape = shape
+        self.attrs = attrs if attrs is not None else {}
 
     def __eq__(self, other):
         try:
             assert self.name == other.name
-            np.testing.assert_equal(self.gpis, other.gpis)
-            np.testing.assert_equal(self.values, other.values)
             assert self.meaning == other.meaning
             assert self.shape == other.shape
+            np.testing.assert_equal(self.gpis, other.gpis)
+            np.testing.assert_equal(self.values, other.values)
             return True
         except AssertionError:
             return False
@@ -69,7 +73,7 @@ class Subset():
 
         Parameters
         ----------
-        format : str
+        format : {'all','save_lonlat','gpis'}
             Format definition string on what values are returned and how.
             * 'gpis': Return in form: {name: [gpis], ... }
             * 'save_lonlat': Return in form as used in save_lonlat():
@@ -80,13 +84,15 @@ class Subset():
                     {name: {'points': gpis,
                             'meaning': meaning,
                             'value': values,
-                            'shape' : shape}}
+                            'shape': shape,
+                            'attrs' : {attributes}}}
 
         Returns
         -------
         subset_dict : dict
             Subset as dict
         """
+
         if format.lower() == 'gpis':
             return {self.name: self.gpis}
         elif format.lower() == 'save_lonlat':
@@ -94,18 +100,21 @@ class Subset():
                                 'meaning': self.meaning}}
         elif format.lower() == 'all':
             return {self.name: {'points': self.gpis, 'value': self.values,
-                                'meaning': self.meaning, 'shape': self.shape}}
+                                'meaning': self.meaning, 'shape': self.shape,
+                                'attrs': self.attrs}}
         else:
             raise ValueError(f"{format} is not a known format definiton")
 
     def select_by_val(self, vals, **subset_kwargs):
         """
-        Filter subset points to points with certain values
+        Filter subset points to points with certain values.
 
         Parameters
         ----------
         vals : list or int
             Whitelist of values
+        subset_kwargs :
+            Additional kwargs are used to create the new subset
 
         Returns
         -------
@@ -159,7 +168,7 @@ class Subset():
             The new subset
         """
 
-        # other is first, therfore other is kept for duplicate vals
+        # this defines for points in both subsets, which value is used.
         if prioritize_other:
             n = 1 # concat(other_gpis, self_gpis)
         else:
@@ -184,10 +193,19 @@ class Subset():
         return Subset(name=new_name, gpis=gpis, values=values[indices],
                       meaning=new_meaning)
 
-    def intersect(self, other, new_name=None, **kwargs):
+    def intersect(self, other, new_name=None, **subset_kwargs):
         """
         Intersect 2 subset, to include points that are in A AND B,
         create a new subset from these points with a new value.
+
+        Parameters
+        ----------
+        other: Subset
+            Another subset that is intersected with this subset.
+        new_name : str, optional (default: None)
+            Name of the Subset that is created from the intersection.
+        subset_kwargs :
+            Additional kwargs are used to create the new subset
         """
 
         gpis = np.intersect1d(self.gpis, other.gpis, return_indices=False)
@@ -195,12 +213,21 @@ class Subset():
         if new_name is None:
             new_name = f"{self.name}_inter_{other.name}"
 
-        return Subset(name=new_name, gpis=gpis, **kwargs)
+        return Subset(name=new_name, gpis=gpis, **subset_kwargs)
 
-    def union(self, other, new_name=None, **kwargs):
+    def union(self, other, new_name=None, **subset_kwargs):
         """
         Unite 2 subsets, to include points from A and B,
         create a new subset from these points with a new value.
+
+        Parameters
+        ----------
+        other: Subset
+            Another subset that is united with this subset.
+        new_name : str, optional (default: None)
+            Name of the Subset that is created from the union of gpis.
+        subset_kwargs :
+            Additional kwargs are used to create the new subset
         """
 
         gpis = np.union1d(self.gpis, other.gpis)
@@ -208,12 +235,21 @@ class Subset():
         if new_name is None:
             new_name = f"{self.name}_union_{other.name}"
 
-        return Subset(name=new_name, gpis=gpis, **kwargs)
+        return Subset(name=new_name, gpis=gpis, **subset_kwargs)
 
-    def diff(self, other, new_name=None, **kwargs):
+    def diff(self, other, new_name=None, **subset_kwargs):
         """
         Difference of 2 subsets, to include points from A without points
         from B, create a new subset from these points with a new value.
+
+        Parameters
+        ----------
+        other: Subset
+            Another subset that is subtracted from this subset.
+        new_name : str, optional (default: None)
+            Name of the Subset that is created from the difference gpis.
+        subset_kwargs :
+            Additional kwargs are used to create the new subset
         """
 
         gpis = np.setdiff1d(self.gpis, other.gpis)
@@ -221,15 +257,18 @@ class Subset():
         if new_name is None:
             new_name = f"{self.name}_diff_{other.name}"
 
-        return Subset(name=new_name, gpis=gpis, **kwargs)
+        return Subset(name=new_name, gpis=gpis, **subset_kwargs)
 
 class SubsetCollection():
     """
-    A SubsetCollection holds multiple subsets and provides functions to create,
-    drop and combine/merge them. Can be written to / read from netcdf.
+    A SubsetCollection holds multiple subsets and provides functions to add,
+    drop and combine/merge multiple of them.
+    Can be written to / read from netcdf.
     """
+
     # todo: is functionality to read/write to nc files needed?
     # todo: Allow setting all subset params when creating coll from dict?
+
     def __init__(self, subsets=None):
         """
         Parameters
@@ -241,18 +280,18 @@ class SubsetCollection():
         self.subsets = [] if subsets is None else subsets
 
     @property
-    def names(self):
+    def names(self) -> list:
         return sorted([s.name for s in self.subsets])
 
     @property
-    def empty(self):
+    def empty(self) -> bool:
         return True if len(self) is 0 else False
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.subsets)
 
-    def __getitem__(self, item:{str, int}):
-        """ Get subset by name """
+    def __getitem__(self, item:{str, int}) -> Subset:
+        """ Get subset by name or by index """
         if isinstance(item, int): # by index, for __iter__
             return self.subsets[item]
         else: # by name
@@ -260,7 +299,7 @@ class SubsetCollection():
                 if s.name == item: return s
         raise KeyError(f"No subset with name or index {item} found")
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         """ Compare 2 collections for equal gpis in all subsets"""
         try:
             assert np.all(self.names == other.names)
@@ -270,11 +309,12 @@ class SubsetCollection():
                 assert self[name] == other[name] # compare subsets
 
             return True
+
         except AssertionError:
             return False
 
     @classmethod
-    def from_dict(cls, subsets_dict):
+    def from_dict(cls, subsets_dict: dict):
         """
         Create a subset collection from gpis passed as a dict.
         This does NOT allow to set values, meaning and shape... # todo: add?
@@ -287,8 +327,8 @@ class SubsetCollection():
 
         Returns
         -------
-        sc : SubsetCollection
-            The collection loaded from dict
+        cls : SubsetCollection
+            The collection initiated from dict values
         """
 
         subsets = []
@@ -298,7 +338,7 @@ class SubsetCollection():
         return cls(subsets=subsets)
 
     @classmethod
-    def from_file(cls, filename):
+    def from_file(cls, filename:str):
         # todo: keep this, not needed to load grid
         """
         Load subset collection from a stored netcdf file.
@@ -310,7 +350,7 @@ class SubsetCollection():
 
         Returns
         -------
-        sc : SubsetCollection
+        cls : SubsetCollection
             The collection loaded from file
         """
 
@@ -338,7 +378,7 @@ class SubsetCollection():
 
         return cls(subsets=subsets)
 
-    def to_file(self, filepath):
+    def to_file(self, filepath:str):
         # todo: keep this, not needed to save grid
         """
         Store subsets as variables in netcdf format.
@@ -366,24 +406,24 @@ class SubsetCollection():
                 ss.setncatts({'meaning': subset.meaning,
                               'shape': subset.shape})
 
-    def as_dict(self, format='all', fill_gpis=None):
+    def as_dict(self, format='all') -> dict:
         """
         Return subset points as a dictionary.
 
+        Parameters
+        ----------
+        format : {'all','save_lonlat','gpis'}
+            See the description of Subset.to_dict()
+
         Returns
         -------
-        format : str
-            See the description of Subset.to_dict()
-            one of: all, save_lonlat, gpis
+        subsets_dict : dict
+            Subsets as dictionary
         """
 
         subset_dicts = {}
         for subset in self.subsets:
-            if fill_gpis:
-                subset_dict = subset.filled(fill_gpis).as_dict(format)
-                subset_dicts.update(subset_dict)
-            else:
-                subset_dicts.update(subset.as_dict(format))
+            subset_dicts.update(subset.as_dict(format))
 
         return subset_dicts
 
@@ -396,6 +436,7 @@ class SubsetCollection():
         subset : Subset
             The subset to add.
         """
+
         if subset.name in self.names:
             raise KeyError(f"A subset {subset.name} already exists in the collection")
 
@@ -416,7 +457,7 @@ class SubsetCollection():
                 self.subsets.pop(i)
 
     def combine(self, subset_names:list, new_name:str, how='intersect',
-                **subset_kwargs):
+                **subset_kwargs) -> Subset:
         """
         Combine 2 or more subsets, to get the common gpis. This is not the
         same as merging them!
@@ -434,7 +475,8 @@ class SubsetCollection():
             * intersect: Points that are in both subsets
             * union: Points that are in subset A or B
             * diff: Points from A without points from B
-        Additional subset_kwargs are passed to create the new subset.
+        subset_kwargs:
+            Kwargs are passed to create the new subset.
 
         Returns
         -------
@@ -497,8 +539,10 @@ class SubsetCollection():
 
         for i, other_name in enumerate(subset_names[1:]):
 
-            new_val_self = new_vals[subset.name] if subset.name in new_vals.keys() else None
-            new_val_other = new_vals[other_name] if other_name in new_vals.keys() else None
+            new_val_self = new_vals[subset.name] \
+                if subset.name in new_vals.keys() else None
+            new_val_other = new_vals[other_name] \
+                if other_name in new_vals.keys() else None
 
             subset = subset.merge(self[other_name], new_val_self=new_val_self,
                                   new_val_other=new_val_other)

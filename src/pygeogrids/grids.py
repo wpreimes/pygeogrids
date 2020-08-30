@@ -1291,7 +1291,7 @@ class MetaGrid(CellGrid):
 
         return subset_dicts
 
-    def save_grid(self, filename, global_attrs=None, var_attrs=None):
+    def save_grid(self, filename, global_attrs=None):
         """
         Save MetaGrid and all subsets to netcdf file.
 
@@ -1302,9 +1302,6 @@ class MetaGrid(CellGrid):
         global_attrs : dict, optional (default: None)
             Additional global attributes that are passed when writing the nc
             file.
-        var_attrs : dict of dicts, optional (default: None)
-            Additional attributes that are stored with the variable
-            format: {var_name: {attr_name: attr_value, ...} ... }
         """
 
         try:
@@ -1325,26 +1322,33 @@ class MetaGrid(CellGrid):
         if not self.subsets.empty:
             subset_dicts = self.subsets_as_dicts(format='save_lonlat')
 
+        var_attrs = {subset.name: subset.attrs for subset in self.subsets}
+
         save_lonlat(filename, self.arrlon, self.arrlat, self.geodatum,
                     arrcell=arrcell, gpis=gpis, subsets=subset_dicts, zlib=True,
                     global_attrs=global_attrs, var_attrs=var_attrs)
 
-    def add_subset(self, subset:{Subset,np.array}, name=None):
+    def add_subset(self, subset:{Subset,dict}):
         """
-        Add a new subset to the subset collection either from a list of GPIs
-        or from a Subset object.
-        """
-        if isinstance(subset, Subset):
-            self.subsets.add(subset)
-            if name is not None:
-                self.subsets[subset.name].name = name
-        else:
-            if name is None:
-                i = 1
-                while f"subset{i}" in self.subset_names: i += 1
-                name = f"subset{i}"
+        Add a new subset to the subset collection either from a Subset object
+        or from a dict with name and gpis as key and value.
 
-            self.subsets.add(Subset(gpis=subset, name=name))
+        Parameters
+        ----------
+        subset : Subset or dict
+            If a Subset is passed directy it is simply added. If a dict of the
+            for {name : gpis} is passed, a new basic subset is created.
+        """
+
+        if isinstance(subset, Subset):
+            pass
+        elif isinstance(subset, dict):
+            for name, gpis in subset.items():
+                subset = Subset(name, gpis)
+        else:
+            raise ValueError("Either pass a Subset or a dict like {name: gpis}")
+
+        self.subsets.add(subset)
 
     def subset_from_bbox(self, latmin=-90, latmax=90, lonmin=-180, lonmax=180,
                          name=None, **subset_kwargs):
@@ -1371,7 +1375,8 @@ class MetaGrid(CellGrid):
         gpis = self.get_bbox_grid_points(latmin, latmax, lonmin, lonmax)
 
         if name is None:
-            name = f"bbox_{'_'.join([str(f) for f in [latmin, latmax, lonmin, lonmax]])}"
+            bbox_str = '_'.join([str(f) for f in [latmin, latmax, lonmin, lonmax]])
+            name = f"bbox_{bbox_str}"
 
         self.add_subset(Subset(name, gpis, **subset_kwargs))
 
