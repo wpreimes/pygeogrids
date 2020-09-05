@@ -300,7 +300,7 @@ class SubsetCollection():
         else: # by name
             for s in self.subsets:
                 if s.name == item: return s
-        raise KeyError(f"No subset with name or index {item} found")
+            raise KeyError(f"No subset with name or index {item} found")
 
     def __eq__(self, other) -> bool:
         """ Compare 2 collections for equal gpis in all subsets"""
@@ -391,6 +391,8 @@ class SubsetCollection():
         filepath : str
             Path to netcdf file to create
         """
+        if self.empty:
+            raise IOError("Cannot write empty subset to file.")
 
         with Dataset(filepath, "w", format="NETCDF4") as ncfile:
             ncfile.createDimension("points", None)
