@@ -39,7 +39,7 @@ import numpy as np
 import pygeogrids.grids as grids
 
 def points_on_map(lons, lats, figsize=(12, 6), color='blue', imax=None,
-                  autozoom=True):
+                  llc_lonlat=None, urc_lonlat=None, set_auto_extent=True):
     # create a simple scatter plot of points on a map
     try:
         import cartopy
@@ -50,15 +50,23 @@ def points_on_map(lons, lats, figsize=(12, 6), color='blue', imax=None,
     data_crs = ccrs.PlateCarree()
     if not imax:
         plt.figure(num=None, figsize=figsize, facecolor='w', edgecolor='k')
-        imax = plt.axes(projection=ccrs.Robinson())
+        imax = plt.axes(projection=ccrs.Mercator())
+
     imax.coastlines(resolution='110m', color='black', linewidth=0.25)
     imax.add_feature(cartopy.feature.BORDERS, linewidth=0.1, zorder=2)
 
-    llc, urc = (min(lons), min(lats)), (max(lons), max(lats))
+    #imax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
 
-    if autozoom:
-        imax.set_extent([llc[0], urc[0], llc[1], urc[1]], crs=data_crs)
-    lon_interval = max([llc[0], urc[0]]) - min([llc[0], urc[0]])
+    if llc_lonlat is None:
+        llc_lonlat = (min(lons), min(lats))
+    if urc_lonlat is None:
+        urc_lonlat = (max(lons), max(lats))
+
+    if set_auto_extent:
+        imax.set_extent([llc_lonlat[0], urc_lonlat[0],
+                         llc_lonlat[1], urc_lonlat[1]], crs=data_crs)
+    lon_interval = max([llc_lonlat[0], urc_lonlat[0]]) - \
+                   min([llc_lonlat[0], urc_lonlat[0]])
     markersize = 1.5 * (360 / lon_interval)
 
     plt.scatter(lons, lats, s=markersize, zorder=3, transform=data_crs, color=color)

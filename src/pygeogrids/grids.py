@@ -1348,7 +1348,7 @@ class MetaGrid(CellGrid):
                          name=None, **subset_kwargs):
         """
         Create a new subset from a bounding box and add it to the collection.
-        This applys to the currently active subset.
+        This applies to the currently active subset.
 
         Parameters
         ----------
@@ -1366,6 +1366,8 @@ class MetaGrid(CellGrid):
         subset_kwargs :
             Additional keywords are passed to the subset generation
         """
+        #if self.active_subset is None:
+        #    raise ValueError("No subset is currently active")
 
         gpis = self.get_bbox_grid_points(latmin, latmax, lonmin, lonmax)
 
@@ -1375,7 +1377,7 @@ class MetaGrid(CellGrid):
 
         self.add_subset(Subset(name, gpis, **subset_kwargs))
 
-    def filter_subset(self, vals:{int:list}, **subset_kwargs) -> Subset:
+    def filter_active_subset(self, vals:{int:list}, **subset_kwargs) -> Subset:
         """
         Create a new subset from the currently active one by filtering with
         the passed values.
@@ -1397,11 +1399,7 @@ class MetaGrid(CellGrid):
         Deactivate the current subset. I.e. go back to the initialisation state.
         Also revert splitting if any splitting was performed.
         """
-
-        self.activearrlon = self.arrlon
-        self.activearrlat = self.arrlat
-        self.activegpis = self.gpis
-        self.allpoints = True
+        self._empty_subset()
         self.unite()
 
     def activate_subset(self, name, vals=None):
@@ -1417,6 +1415,9 @@ class MetaGrid(CellGrid):
             Subset values are filtered for these values directly. without creating
             a new subset
         """
+
+        if self.active_subset is not None:
+            self.deactivate_subset()
 
         subset = self.subsets[name]
         if vals is not None:
@@ -1478,7 +1479,9 @@ class MetaGrid(CellGrid):
                                            new_vals=layer_vals,
                                            keep=keep_merged))
 
-    def plot(self, plot_subset=True, plot_points=False):
+
+    def plot(self, only_subset=False):
+        """ Draw a basic map of grid points and current active subset """
         try:
             import matplotlib.pyplot as plt
         except ImportError:
@@ -1486,14 +1489,15 @@ class MetaGrid(CellGrid):
             return
         from pygeogrids.plotting import points_on_map
         imax = None
-        if plot_points:
+
+        if not only_subset:
             imax = points_on_map(self.arrlon, self.arrlat, color='blue', imax=imax)
-        if plot_subset:
-            imax = points_on_map(self.activearrlon, self.activearrlat, color='green',
-                               imax=imax, autozoom=False if plot_points else True)
 
+        imax = points_on_map(self.activearrlon, self.activearrlat, color='green',
+                           imax=imax, set_auto_extent=True if only_subset else False)
+
+        plt.show()
         return imax
-
 
 
 def lonlat2cell(lon, lat, cellsize=5., cellsize_lon=None, cellsize_lat=None):

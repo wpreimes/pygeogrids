@@ -67,6 +67,14 @@ class Subset():
         except AssertionError:
             return False
 
+    def _apply(self, other, method, *args, **kwargs):
+        """ Apply class method, together with other dataset. """
+
+        if isinstance(method, str):
+            return self.__getattribute__(method)(other, *args, **kwargs)
+        else:
+            raise NotImplemented('Only predefined methods can be applied.')
+
     def as_dict(self, format='all') -> dict:
         """
         Return subset attributes as a dictionary
@@ -79,13 +87,15 @@ class Subset():
             * 'save_lonlat': Return in form as used in save_lonlat():
                     {name: {'points': gpis,
                             'meaning': meaning,
-                            'value': values }}
+                            'value': values }
+                            ... }
             * 'all' : Return all data and metadata
                     {name: {'points': gpis,
                             'meaning': meaning,
                             'value': values,
                             'shape': shape,
-                            'attrs' : {attributes}}}
+                            'attrs' : {attributes ...}}
+                            ... }
 
         Returns
         -------
@@ -125,7 +135,8 @@ class Subset():
         idx = np.isin(self.values, vals)
 
         if not any(idx):
-            raise ValueError('No points in subset {self.name} found with passed value(s)')
+            raise ValueError('No points in subset {self.name} found with passed'
+                             ' value(s)')
 
         if 'name' not in subset_kwargs:
             name = f"filtered_{self.name}"
@@ -259,8 +270,6 @@ class Subset():
 
         return Subset(name=new_name, gpis=gpis, **subset_kwargs)
 
-    def _apply(self, other, method, *args, **kwargs):
-        return self.__getattribute__(method)(other, *args, **kwargs)
 
 class SubsetCollection():
     """
