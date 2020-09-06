@@ -4,13 +4,20 @@ import numpy as np
 import warnings
 from netCDF4 import Dataset
 from collections import Iterable
+import copy
 
 class Subset():
     """
     A subset is an arbitrary group of GPIs on a grid (e.g. land points etc.).
     """
-    def __init__(self, name, gpis, meaning='', values=1, attrs=None):
-        # todo: sort GPIs when creating subset?
+
+    def __init__(self,
+                 name: str,
+                 gpis: {np.array, list},
+                 meaning: str = '',
+                 values: {int, np.array, list} = 1,
+                 attrs: {dict} = None
+                 ):
         """
         Parameters
         ----------
@@ -28,6 +35,7 @@ class Subset():
             Attributes that are stored together with the subset.
             Attributes are not compared in __eq__
         """
+
         gpis = np.asanyarray(gpis)
 
         self.name = name
@@ -143,7 +151,9 @@ class Subset():
         else:
             name = subset_kwargs.pop('name')
 
-        return Subset(name=name, gpis=self.gpis[idx], values=self.values[idx],
+        return Subset(name=name,
+                      gpis=self.gpis[idx],
+                      values=self.values[idx],
                       **subset_kwargs)
 
     def merge(self, other, new_name=None, new_meaning=None, new_val_self=None,
@@ -181,9 +191,9 @@ class Subset():
 
         # this defines for points in both subsets, which value is used.
         if prioritize_other:
-            n = 1 # concat(other_gpis, self_gpis)
+            n = 1  # concat(other_gpis, self_gpis)
         else:
-            n = -1 # concat(self_gpis, other_gpis)
+            n = -1  # concat(self_gpis, other_gpis)
 
         gpis = np.concatenate((other.gpis, self.gpis)[::n])
         other_values, self_values = other.values.copy(), self.values.copy()
@@ -201,7 +211,9 @@ class Subset():
         if new_name is None:
             new_name = f"{self.name}_merge_{other.name}"
 
-        return Subset(name=new_name, gpis=gpis, values=values[indices],
+        return Subset(name=new_name,
+                      gpis=gpis,
+                      values=values[indices],
                       meaning=new_meaning)
 
     def intersect(self, other, new_name=None, **subset_kwargs):
@@ -224,7 +236,9 @@ class Subset():
         if new_name is None:
             new_name = f"{self.name}_inter_{other.name}"
 
-        return Subset(name=new_name, gpis=gpis, **subset_kwargs)
+        return Subset(name=new_name,
+                      gpis=gpis,
+                      **subset_kwargs)
 
     def union(self, other, new_name=None, **subset_kwargs):
         """
@@ -246,7 +260,9 @@ class Subset():
         if new_name is None:
             new_name = f"{self.name}_union_{other.name}"
 
-        return Subset(name=new_name, gpis=gpis, **subset_kwargs)
+        return Subset(name=new_name,
+                      gpis=gpis,
+                      **subset_kwargs)
 
     def diff(self, other, new_name=None, **subset_kwargs):
         """
@@ -268,20 +284,23 @@ class Subset():
         if new_name is None:
             new_name = f"{self.name}_diff_{other.name}"
 
-        return Subset(name=new_name, gpis=gpis, **subset_kwargs)
+        return Subset(name=new_name,
+                      gpis=gpis,
+                      **subset_kwargs)
 
 
 class SubsetCollection():
     """
     A SubsetCollection holds multiple subsets and provides functions to add,
     drop and combine/merge multiple of them.
-    Can be written to / read from netcdf.
+    Can be written to / read from netcdf file.
     """
 
     # todo: is functionality to read/write to nc files needed?
     # todo: Allow setting all subset params when creating coll from dict?
 
-    def __init__(self, subsets=None):
+    def __init__(self,
+                 subsets: {list, np.array}=None):
         """
         Parameters
         ----------
@@ -302,13 +321,14 @@ class SubsetCollection():
     def __len__(self) -> int:
         return len(self.subsets)
 
-    def __getitem__(self, item:{str, int}) -> Subset:
+    def __getitem__(self, item: {str, int}) -> Subset:
         """ Get subset by name or by index """
-        if isinstance(item, int): # by index, for __iter__
+        if isinstance(item, int):  # by index, for __iter__
             return self.subsets[item]
-        else: # by name
+        else:  # by name
             for s in self.subsets:
                 if s.name == item: return s
+
             raise KeyError(f"No subset with name or index {item} found")
 
     def __eq__(self, other) -> bool:
@@ -318,24 +338,31 @@ class SubsetCollection():
 
             for name in self.names:
                 assert name in other.names
-                assert self[name] == other[name] # compare subsets
+                assert self[name] == other[name]  # compare subsets
 
             return True
 
         except AssertionError:
             return False
 
+    def copy(self):
+        """ Return a duplicate of this object """
+        return SubsetCollection(copy.copy(self.subsets))
+
     @classmethod
-    def from_dict(cls, subsets_dict: dict):
+    def from_dict(cls, subsets_dict: dict = None):
         """
         Create a subset collection from gpis passed as a dict.
-        This does NOT allow to set values, meaning and shape... # todo: add?
 
         Parameters
         ----------
-        subsets_dict : dict
+        subsets_dict : dict, optional (default: None)
             Subset dict with subset names as keys and gpis as values
-            {'subset1' : [1,2,3], 'subset2': [1,3,5]}
+                e.g. {'subset1' : [1,2,3], 'subset2': [1,3,5]}
+            OR
+            with subset names as keys and Subset kwargs as sub-dicts.
+                e.g. {'subset1' : {'gpis': [1,2,3], 'values': 1,
+                                   'meaning': 'abc', 'attrs': {'a': 1}}}
 
         Returns
         -------
@@ -343,15 +370,23 @@ class SubsetCollection():
             The collection initiated from dict values
         """
 
+        if subsets_dict is None:
+            subsets_dict = {}
+
         subsets = []
-        for name, gpis in subsets_dict.items():
-            subsets.append(Subset(name, gpis))
+        for name, data in subsets_dict.items():
+            if isinstance(data, dict):
+                kwargs = data
+                subsets.append(Subset(name, **kwargs))
+            else:
+                gpis = data
+                subsets.append(Subset(name, gpis))
 
         return cls(subsets=subsets)
 
     @classmethod
-    def from_file(cls, filename:str):
-        # todo: keep this, not needed to load grid
+    def from_file(cls, filename: str):
+        # todo: keep this? ... not needed to load grid
         """
         Load subset collection from a stored netcdf file.
 
@@ -372,16 +407,13 @@ class SubsetCollection():
                 var = ncfile.variables[varname]
                 if var.ndim == 1: continue
                 subset_kwargs = {}
+                attrs = var.__dict__
                 try:
-                    subset_kwargs['meaning'] = var.getncattr('meaning')
+                    subset_kwargs['meaning'] = attrs.pop('meaning')
                 except KeyError:
                     pass
-                try:
-                    shape = var.getncattr('shape')
-                    shape = (shape,) if not isinstance(shape, Iterable) else shape
-                    subset_kwargs['shape'] = shape
-                except KeyError:
-                    pass
+
+                subset_kwargs['attrs'] = attrs
 
                 subset = Subset(varname, gpis=var[:][0], values=var[:][1],
                                 **subset_kwargs)
@@ -390,8 +422,8 @@ class SubsetCollection():
 
         return cls(subsets=subsets)
 
-    def to_file(self, filepath:str):
-        # todo: keep this, not needed to save grid
+    def to_file(self, filepath: str):
+        # todo: keep this? ... not needed to save grid
         """
         Store subsets as variables in netcdf format.
 
@@ -405,7 +437,7 @@ class SubsetCollection():
 
         with Dataset(filepath, "w", format="NETCDF4") as ncfile:
             ncfile.createDimension("points", None)
-            ncfile.createDimension("props", 2) # gpis & values
+            ncfile.createDimension("props", 2)  # gpis & values
 
             props = ncfile.createVariable('_props', 'str', zlib=True,
                                           dimensions=('props',))
@@ -441,7 +473,7 @@ class SubsetCollection():
 
         return subset_dicts
 
-    def add(self, subset:Subset):
+    def add(self, subset: Subset):
         """
         Append another subset to the collection.
 
@@ -452,11 +484,12 @@ class SubsetCollection():
         """
 
         if subset.name in self.names:
-            raise KeyError(f"A subset {subset.name} already exists in the collection")
+            raise KeyError(f"A subset {subset.name} already exists "
+                           f"in the collection")
 
         self.subsets.append(subset)
 
-    def drop(self, name:str):
+    def drop(self, name: str):
         """
         Drop a subset from the collection
 
@@ -470,8 +503,8 @@ class SubsetCollection():
             if s.name == name:
                 self.subsets.pop(i)
 
-    def combine(self, subset_names:list, new_name:str, method='intersect',
-                **subset_kwargs) -> Subset:
+    def combine(self, subset_names: list, new_name: str,
+                method='intersect', **subset_kwargs) -> Subset:
         """
         Combine 2 or more subsets, to get the common gpis. This is not the
         same as merging them!
@@ -491,11 +524,6 @@ class SubsetCollection():
             * diff: Points from A without points from B
         subset_kwargs:
             Kwargs are passed to create the new subset.
-
-        Returns
-        -------
-        combined : Subset
-            A new subset created by combining the selected Subsets.
         """
 
         if len(subset_names) < 2:
@@ -505,12 +533,14 @@ class SubsetCollection():
         subset = self[subset_names[0]]
 
         for i, other_name in enumerate(subset_names[1:]):
-            subset = subset._apply(self[other_name], method, new_name=new_name,
+            subset = subset._apply(self[other_name],
+                                   method,
+                                   new_name=new_name,
                                    **subset_kwargs)
 
-        return subset
+        self.add(subset)
 
-    def merge(self, subset_names:list, new_name=None, new_vals=None, keep=False):
+    def merge(self, subset_names: list, new_name=None, new_vals=None, keep=False):
         """
         Merge down multiple layers. This means that gpis and values for subsets
         in the provided order are combined and gpis that are in multiple subsets
@@ -526,27 +556,24 @@ class SubsetCollection():
             is created.
         keep : bool, optional (default: False)
             Keep the original input subsets as well as the newly created one.
-        new_vals : dict, optional (default: None)
+        new_vals : dict or int, optional (default: None)
             New values that are assigned to the respective, merged subsets.
             Structure: {subset_name: subset_value, ...}
             Any subset named that is selected here, must be in subset_names as
-            well.
+            well. If an int is passed, that value is used for all points of the
+            merged subset.
         Additional kwargs are passed to create the new subset.
-
-        Returns
-        -------
-        merged : Subset
-            A new subset created by merging the selected Subsets.
         """
 
         if len(subset_names) < 2:
-            raise IOError(f"At least 2 subsets are expected for merging, "
-                          f"got {len(subset_names)}")
+            raise IOError(f"At least 2 subsets are expected for merging")
 
         if new_vals is None:
             new_vals = {}
+        if isinstance(new_vals, int):
+            new_vals = {n: new_vals for n in subset_names}
 
-        if any([e in subset_names for e in new_vals.keys()]):
+        if any([e not in subset_names for e in new_vals.keys()]):
             raise ValueError("Names in new_vals must match with subset_names passed.")
 
         subset = self[subset_names[0]]
@@ -572,18 +599,17 @@ class SubsetCollection():
         subset.name = new_name
         subset.meaning = f"Merged subsets {', '.join(subset_names)}"
 
-        return subset
+        self.add(subset)
 
 
 if __name__ == '__main__':
-
-    ss = Subset('test', np.array([1,2,3,4,5]), values=1)
+    ss = Subset('test', np.array([1, 2, 3, 4, 5]), values=1)
     sc = SubsetCollection([ss])
-    t2 = Subset('test2', np.array([1,2,3,4,5])*2, values=2)
+    t2 = Subset('test2', np.array([1, 2, 3, 4, 5]) * 2, values=2)
     sc.add(t2)
 
     inter = sc.combine(['test', 'test2'], new_name='inter', values=3,
-                       how='intersect', shape=(10,10))
+                       how='intersect', shape=(10, 10))
     sc.add(inter)
 
     merge = sc.merge(['test', 'test2'], new_name='merged', keep=False)
@@ -594,7 +620,3 @@ if __name__ == '__main__':
     sc = SubsetCollection.from_file(r'C:\Temp\ssc\ssc.nc')
 
     pass
-
-
-
-

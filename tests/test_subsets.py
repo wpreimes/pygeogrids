@@ -69,6 +69,3 @@ def test_merge():
     assert merged.meaning == 'merged'
     np.testing.assert_array_equal(merged.gpis,
         np.unique(np.concatenate((subset1.gpis, subset2.gpis))))
-
-
-
