@@ -349,9 +349,10 @@ def save_grid(filename, grid, subset_name='subset_flag', subset_value=1.,
 
     gpis = grid.gpis
 
+    if global_attrs is None:
+        global_attrs = {}
+
     if grid.shape is not None:
-        if global_attrs is None:
-            global_attrs = {}
         global_attrs['shape'] = grid.shape
 
     global_attrs['grid_type'] = grid.__class__.__name__

@@ -85,7 +85,7 @@ class BasicGrid(object):
         if set (default) then the kdTree for nearest neighbour
         search will be built on initialization
     shape : tuple, optional
-        The shape of the grid array in 2-d space.
+        The shape of the grid array in 2-d space [lat, lon].
         e.g. for a 1x1 degree global regular grid the shape would be (180,360).
         if given the grid can be reshaped into the given shape
         this indicates that it is a regular grid and fills the
