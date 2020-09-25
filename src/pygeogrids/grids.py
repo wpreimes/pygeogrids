@@ -47,6 +47,7 @@ from pygeogrids.geodetic_datum import GeodeticDatum
 from pygeogrids.subset import SubsetCollection, Subset
 from netCDF4 import Dataset
 from pygeogrids.netcdf import load_grid_definition, filled_no_mask, save_lonlat
+import warnings
 
 class GridDefinitionError(Exception):
     pass
@@ -1485,7 +1486,7 @@ class MetaGrid(CellGrid):
         try:
             import matplotlib.pyplot as plt
         except ImportError:
-            print('Plotting needs matplotlib installed, which is not found')
+            warnings.warn('Plotting needs matplotlib installed, which is not found')
             return
         from pygeogrids.plotting import points_on_map
         imax = None

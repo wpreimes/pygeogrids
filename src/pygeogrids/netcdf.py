@@ -34,7 +34,6 @@ import numpy as np
 import os
 from datetime import datetime
 from collections import Iterable
-import matplotlib.pyplot as plt
 import warnings
 
 
