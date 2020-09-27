@@ -53,16 +53,17 @@ class Subset():
 
         self.meaning = '' if meaning is None else meaning
 
-        if isinstance(values, int):
-            self.values = np.repeat(values, len(self.gpis))
+        if isinstance(values, (int, float)):
+            self.values = np.repeat(int(values), len(self.gpis))
         else:
-            values = np.asanyarray(values)
-            if len(values) != len(gpis):
+            values = np.asanyarray(values).flatten()
+            if len(values.flatten()) != len(gpis.flatten()):
                 raise ValueError(f"Shape of values array does not match "
                                  f"to gpis with {len(gpis)} elements")
             self.values = values[idx]
 
         self.attrs = attrs if attrs is not None else {}
+        self.attrs['shape'] = self.shape
 
     def __eq__(self, other):
         try:
@@ -87,21 +88,25 @@ class Subset():
         """
         Return subset attributes as a dictionary
 
+        # todo: rename 'points' in save_lonlat to 'gpis', and value to values
+         # todo: and change adapt the save_grid function accordingly?
+
         Parameters
         ----------
         format : {'all','save_lonlat','gpis'}
             Format definition string on what values are returned and how.
             * 'gpis': Return in form: {name: [gpis], ... }
-            * 'save_lonlat': Return in form as used in save_lonlat():
+            * 'save_lonlat': Return in form as used in save_lonlat(), i.e.
+                             not all attributes are used and 'gpis' is named
+                             'points' instead and values is named value..
                     {name: {'points': gpis,
                             'meaning': meaning,
                             'value': values }
                             ... }
             * 'all' : Return all data and metadata
-                    {name: {'points': gpis,
+                    {name: {'gpis': gpis,
                             'meaning': meaning,
                             'value': values,
-                            'shape': shape,
                             'attrs' : {attributes ...}}
                             ... }
 
@@ -112,14 +117,22 @@ class Subset():
         """
 
         if format.lower() == 'gpis':
+
             return {self.name: self.gpis}
+
         elif format.lower() == 'save_lonlat':
-            return {self.name: {'points': self.gpis, 'value': self.values,
+
+            return {self.name: {'points': self.gpis,
+                                'value': self.values,
                                 'meaning': self.meaning}}
+
         elif format.lower() == 'all':
-            return {self.name: {'points': self.gpis, 'value': self.values,
-                                'meaning': self.meaning, 'shape': self.shape,
+
+            return {self.name: {'gpis': np.reshape(self.gpis, self.shape),
+                                'values': self.values,
+                                'meaning': self.meaning,
                                 'attrs': self.attrs}}
+
         else:
             raise ValueError(f"{format} is not a known format definiton")
 
@@ -216,7 +229,7 @@ class Subset():
                       values=values[indices],
                       meaning=new_meaning)
 
-    def intersect(self, other, new_name=None, **subset_kwargs):
+    def intersect(self, other, **subset_kwargs):
         """
         Intersect 2 subset, to include points that are in A AND B,
         create a new subset from these points with a new value.
@@ -225,22 +238,20 @@ class Subset():
         ----------
         other: Subset
             Another subset that is intersected with this subset.
-        new_name : str, optional (default: None)
-            Name of the Subset that is created from the intersection.
         subset_kwargs :
             Additional kwargs are used to create the new subset
         """
 
         gpis = np.intersect1d(self.gpis, other.gpis, return_indices=False)
 
-        if new_name is None:
-            new_name = f"{self.name}_inter_{other.name}"
+        if 'name' not in subset_kwargs:
+            subset_kwargs['name'] = f"{self.name}_inter_{other.name}"
 
-        return Subset(name=new_name,
+        return Subset(name=subset_kwargs.pop('name'),
                       gpis=gpis,
                       **subset_kwargs)
 
-    def union(self, other, new_name=None, **subset_kwargs):
+    def union(self, other, **subset_kwargs):
         """
         Unite 2 subsets, to include points from A and B,
         create a new subset from these points with a new value.
@@ -249,22 +260,20 @@ class Subset():
         ----------
         other: Subset
             Another subset that is united with this subset.
-        new_name : str, optional (default: None)
-            Name of the Subset that is created from the union of gpis.
         subset_kwargs :
             Additional kwargs are used to create the new subset
         """
 
         gpis = np.union1d(self.gpis, other.gpis)
 
-        if new_name is None:
-            new_name = f"{self.name}_union_{other.name}"
+        if 'name' not in subset_kwargs:
+            subset_kwargs['name'] = f"{self.name}_union_{other.name}"
 
-        return Subset(name=new_name,
+        return Subset(name=subset_kwargs.pop('name'),
                       gpis=gpis,
                       **subset_kwargs)
 
-    def diff(self, other, new_name=None, **subset_kwargs):
+    def diff(self, other, **subset_kwargs):
         """
         Difference of 2 subsets, to include points from A without points
         from B, create a new subset from these points with a new value.
@@ -273,18 +282,16 @@ class Subset():
         ----------
         other: Subset
             Another subset that is subtracted from this subset.
-        new_name : str, optional (default: None)
-            Name of the Subset that is created from the difference gpis.
         subset_kwargs :
             Additional kwargs are used to create the new subset
         """
 
         gpis = np.setdiff1d(self.gpis, other.gpis)
 
-        if new_name is None:
-            new_name = f"{self.name}_diff_{other.name}"
+        if 'name' not in subset_kwargs:
+            subset_kwargs['name'] = f"{self.name}_diff_{other.name}"
 
-        return Subset(name=new_name,
+        return Subset(name=subset_kwargs.pop('name'),
                       gpis=gpis,
                       **subset_kwargs)
 
@@ -292,8 +299,8 @@ class Subset():
 class SubsetCollection():
     """
     A SubsetCollection holds multiple subsets and provides functions to add,
-    drop and combine/merge multiple of them.
-    Can be written to / read from netcdf file.
+    drop and combine/merge several of them at once.
+    Can be written to / read from a netcdf (definition) file.
     """
 
     # todo: is functionality to read/write to nc files needed?
@@ -402,20 +409,37 @@ class SubsetCollection():
         """
 
         subsets = []
+
         with Dataset(filename, 'r') as ncfile:
+
             for varname in ncfile.variables:
+
                 var = ncfile.variables[varname]
                 if var.ndim == 1: continue
+
                 subset_kwargs = {}
                 attrs = var.__dict__
+
                 try:
                     subset_kwargs['meaning'] = attrs.pop('meaning')
                 except KeyError:
                     pass
+                try:
+                    shape = attrs.pop('shape')
+                except KeyError:
+                    shape = None
+
+                dat = var[:]
+                assert not dat.mask, "Masked values detected"
 
                 subset_kwargs['attrs'] = attrs
 
-                subset = Subset(varname, gpis=var[:][0], values=var[:][1],
+                gpis, values = dat.filled()
+
+                if shape is not None:
+                    gpis = np.reshape(gpis, shape)
+
+                subset = Subset(varname, gpis=gpis, values=values,
                                 **subset_kwargs)
 
                 subsets.append(subset)
@@ -436,21 +460,30 @@ class SubsetCollection():
             raise IOError("Cannot write empty subset to file.")
 
         with Dataset(filepath, "w", format="NETCDF4") as ncfile:
-            ncfile.createDimension("points", None)
             ncfile.createDimension("props", 2)  # gpis & values
 
             props = ncfile.createVariable('_props', 'str', zlib=True,
                                           dimensions=('props',))
 
-            props[:] = np.array(['gpis', 'vals'])
+            props[:] = np.array(['gpis', 'values'])
 
             for subset in self.subsets:
-                ss = ncfile.createVariable(subset.name, 'int', zlib=True,
-                                           dimensions=('props', 'points'))
-                ss[:] = np.array([subset.gpis, subset.values])
+                this_dim_name = f"points_{subset.name}"
+                ncfile.createDimension(this_dim_name, len(subset.gpis))
 
-                ss.setncatts({'meaning': subset.meaning,
-                              'shape': subset.shape})
+                data = ncfile.createVariable(subset.name, 'int', zlib=True,
+                                             dimensions=('props', this_dim_name))
+
+                dat = np.vstack((subset.gpis, subset.values))
+
+                data[:] = dat
+
+                ncfile.variables[subset.name].setncatts(
+                     {'meaning': subset.meaning, 'shape': subset.shape})
+
+            # global attrs:
+            ncfile.subsets = self.names
+
 
     def as_dict(self, format='all') -> dict:
         """
@@ -504,7 +537,7 @@ class SubsetCollection():
                 self.subsets.pop(i)
 
     def combine(self, subset_names: list, new_name: str,
-                method='intersect', **subset_kwargs) -> Subset:
+                method='intersect', **subset_kwargs):
         """
         Combine 2 or more subsets, to get the common gpis. This is not the
         same as merging them!
@@ -535,7 +568,7 @@ class SubsetCollection():
         for i, other_name in enumerate(subset_names[1:]):
             subset = subset._apply(self[other_name],
                                    method,
-                                   new_name=new_name,
+                                   name=new_name,
                                    **subset_kwargs)
 
         self.add(subset)
@@ -608,15 +641,16 @@ if __name__ == '__main__':
     t2 = Subset('test2', np.array([1, 2, 3, 4, 5]) * 2, values=2)
     sc.add(t2)
 
-    inter = sc.combine(['test', 'test2'], new_name='inter', values=3,
-                       how='intersect', shape=(10, 10))
-    sc.add(inter)
+    s3 = Subset('test3', np.array([[1, 2, 3], [4, 5, 6]]), values=1)
+    sc.add(s3)
 
-    merge = sc.merge(['test', 'test2'], new_name='merged', keep=False)
-    sc.add(merge)
 
-    sc.to_file(r'C:\Temp\ssc\ssc.nc')
+    sc.combine(['test', 'test2'], new_name='inter', values=3, method='intersect')
 
-    sc = SubsetCollection.from_file(r'C:\Temp\ssc\ssc.nc')
+    sc.merge(['test', 'test2'], new_name='merged', keep=False)
+
+    sc.to_file('/home/wolfgang/data-write/temp/ssc.nc')
+
+    sc = SubsetCollection.from_file('/home/wolfgang/data-write/temp/ssc.nc')
 
     pass
