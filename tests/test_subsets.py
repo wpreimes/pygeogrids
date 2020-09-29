@@ -8,7 +8,7 @@ def test_subset():
     subset2 = Subset('test2', gpis = np.arange(50,150), values=2, meaning='subset 2')
 
     np.testing.assert_array_equal(subset1.as_dict('gpis')['test1'], np.arange(100))
-    np.testing.assert_array_equal(subset1.as_dict('all')['test1']['value'],
+    np.testing.assert_array_equal(subset1.as_dict('all')['test1']['values'],
                                   np.repeat(1, 100))
     assert subset2.as_dict('save_lonlat')['test2']['meaning'] == 'subset 2'
 
@@ -31,7 +31,7 @@ def test_select():
 
 def test_inter():
     subset1, subset2 = test_subset()
-    inter = subset1.intersect(subset2, new_name='inter', values=3)
+    inter = subset1.intersect(subset2, name='inter', values=3)
     assert all(inter.values == 3)
     np.testing.assert_array_equal(inter.gpis, np.arange(50,100))
     assert inter.name == 'inter'

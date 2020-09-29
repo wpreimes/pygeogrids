@@ -7,7 +7,6 @@ Created on Aug 30 14:20 2020
 
 from pygeogrids.subset import SubsetCollection, Subset
 import numpy as np
-import pytest
 import tempfile
 import os
 import unittest
@@ -70,11 +69,11 @@ class TestSubsetCollection(unittest.TestCase):
 
 
         assert sorted(d_all.keys()) == ['test', 'test2']
-        assert sorted(d_all['test'].keys()) == sorted(['points', 'meaning',
-                                                       'value', 'attrs', 'shape'])
+        assert sorted(d_all['test'].keys()) == sorted(['gpis', 'meaning',
+                                                       'values', 'attrs'])
 
-        for d in [d_all, d_lonlat]:
-            np.testing.assert_array_equal(d['test']['points'], self.sc['test'].gpis)
+        for n, d in zip(['gpis', 'points'], [d_all, d_lonlat]):
+            np.testing.assert_array_equal(d['test'][n], self.sc['test'].gpis)
 
         np.testing.assert_array_equal(d_gpis['test'], self.sc['test'].gpis)
 
