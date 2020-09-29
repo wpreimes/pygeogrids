@@ -51,5 +51,5 @@ MANIFEST
 
 # Other
 .coverage*/
-#**/.ipynb_checkpoints/**
+**/.ipynb_checkpoints/**
 src/_local
