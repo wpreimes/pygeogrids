@@ -323,7 +323,7 @@ class SubsetCollection():
 
     @property
     def empty(self) -> bool:
-        return True if len(self) is 0 else False
+        return True if (len(self) == 0) else False
 
     def __len__(self) -> int:
         return len(self.subsets)
@@ -429,12 +429,10 @@ class SubsetCollection():
                 except KeyError:
                     shape = None
 
-                dat = var[:]
-                assert not dat.mask, "Masked values detected"
+                gpis, values = var[:]
+                gpis, values = gpis.filled(), values.filled()
 
                 subset_kwargs['attrs'] = attrs
-
-                gpis, values = dat.filled()
 
                 if shape is not None:
                     gpis = np.reshape(gpis, shape)
@@ -478,8 +476,15 @@ class SubsetCollection():
 
                 data[:] = dat
 
-                ncfile.variables[subset.name].setncatts(
-                     {'meaning': subset.meaning, 'shape': subset.shape})
+                subset.attrs['meaning'] = subset.meaning
+                subset.attrs['shape'] = subset.shape
+
+                try:
+                    subset.attrs.pop('valid_range')
+                except KeyError:
+                    pass
+
+                ncfile.variables[subset.name].setncatts(subset.attrs)
 
             # global attrs:
             ncfile.subsets = self.names
@@ -636,21 +641,5 @@ class SubsetCollection():
 
 
 if __name__ == '__main__':
-    ss = Subset('test', np.array([1, 2, 3, 4, 5]), values=1)
-    sc = SubsetCollection([ss])
-    t2 = Subset('test2', np.array([1, 2, 3, 4, 5]) * 2, values=2)
-    sc.add(t2)
-
-    s3 = Subset('test3', np.array([[1, 2, 3], [4, 5, 6]]), values=1)
-    sc.add(s3)
-
-
-    sc.combine(['test', 'test2'], new_name='inter', values=3, method='intersect')
-
-    sc.merge(['test', 'test2'], new_name='merged', keep=False)
-
-    sc.to_file('/home/wolfgang/data-write/temp/ssc.nc')
-
-    sc = SubsetCollection.from_file('/home/wolfgang/data-write/temp/ssc.nc')
-
-    pass
+    path = r"H:\code\pygeogrids\docs\examples\metagrid\europe.nc"
+    coll = SubsetCollection.from_file(path)

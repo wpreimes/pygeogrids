@@ -31,8 +31,10 @@ The grids module defines the grid classes.
 
 import numpy as np
 import numpy.testing as nptest
+
 try:
     from osgeo import ogr
+
     ogr_installed = True
 except ImportError:
     ogr_installed = False
@@ -49,6 +51,7 @@ from netCDF4 import Dataset
 from pygeogrids.netcdf import load_grid_definition, filled_no_mask, save_lonlat
 import warnings
 
+
 class GridDefinitionError(Exception):
     pass
 
@@ -58,7 +61,6 @@ class GridIterationError(Exception):
 
 
 class BasicGrid(object):
-
     """
     Grid that just has lat,lon coordinates and can find the
     nearest neighbour. It can also yield the gpi, lat, lon
@@ -241,7 +243,6 @@ class BasicGrid(object):
         self.activearrlat = self.arrlat
         self.activegpis = self.gpis
         self.allpoints = True
-
 
     @classmethod
     def from_file(cls, filename, subset_flag='subset_flag', subset_value=1,
@@ -546,7 +547,7 @@ class BasicGrid(object):
             return index_lat, index_lon
 
         else:
-            raise(GridDefinitionError("Grid has no 2D shape"))
+            raise (GridDefinitionError("Grid has no 2D shape"))
 
     def calc_lut(self, other, max_dist=np.Inf, into_subset=False):
         """
@@ -792,8 +793,8 @@ class BasicGrid(object):
         return np.all([lonsame, latsame, gpisame, subsetsame, shapesame,
                        geosame])
 
-class CellGrid(BasicGrid):
 
+class CellGrid(BasicGrid):
     """
     Grid that has lat,lon coordinates as well as cell informatin. It can find
     nearest neighbour. It can also yield the gpi, lat, lon, cell information
@@ -1034,7 +1035,7 @@ class CellGrid(BasicGrid):
             cell_gpis = np.where(cell == self.activearrcell)[0]
             for gpi in cell_gpis:
                 yield self.activegpis[gpi], self.activearrlon[gpi], \
-                    self.activearrlat[gpi], cell
+                      self.activearrlat[gpi], cell
 
     def _split_grid_points(self, n):
         """
@@ -1062,7 +1063,7 @@ class CellGrid(BasicGrid):
             cell_gpis = np.where(cell == self.subcells[n])[0]
             for gpi in cell_gpis:
                 yield self.subgpis[n][gpi], self.subarrlons[n][gpi], \
-                    self.subarrlats[n][gpi], cell
+                      self.subarrlats[n][gpi], cell
 
     def subgrid_from_gpis(self, gpis):
         """
@@ -1120,7 +1121,8 @@ class CellGrid(BasicGrid):
                           == other.arrcell[idx_gpi_other])
         return np.all([basicsame, cellsame])
 
-class MetaGrid(CellGrid):
+
+class MetaGrid():
     """
     MetaGrid is a version of a Basic or CellGrid that contains a subset collection
     to quickly create, activate, combine and store multiple subsets.
@@ -1174,14 +1176,15 @@ class MetaGrid(CellGrid):
         """
 
         if cells is None:
-            #todo: how to use BasicGrid or CellGrid? Black magic or refactor?
-            cells = np.repeat(0, len(lon))
+            self.base = BasicGrid(lon=lon, lat=lat, gpis=gpis,
+                                  geodatum=geodatum, setup_kdTree=setup_kdTree,
+                                  subset=None, shape=shape)
+        else:
+            self.base = CellGrid(lon=lon, lat=lat, gpis=gpis, cells=cells,
+                                 geodatum=geodatum, setup_kdTree=setup_kdTree,
+                                 subset=None, shape=shape)
 
-        super(MetaGrid, self).__init__(lon=lon, lat=lat, gpis=gpis, cells=cells,
-                              geodatum=geodatum, setup_kdTree=setup_kdTree,
-                              subset=None, shape=shape)
-
-        self.active_subset = None # active_subset subset, set by activate()
+        self.active_subset = None  # active_subset subset, set by activate()
 
         if isinstance(subsets, SubsetCollection):
             self.subsets = subsets
@@ -1194,7 +1197,7 @@ class MetaGrid(CellGrid):
 
     def __eq__(self, other):
         """ Compare grids and subset collections """
-        basicsame = super(MetaGrid, self).__eq__(other)
+        basicsame = self.base == other
         subsetsame = self.subsets == other.subset_coll
         return all([basicsame, subsetsame])
 
@@ -1264,6 +1267,65 @@ class MetaGrid(CellGrid):
                    shape=shape,
                    subsets=subsets)
 
+    @classmethod
+    def from_grid(cls, grid, input_subset_name='input_subset', subsets=None):
+        """
+        Create a MetaGrid object from a passed BasicGrid or CellGrid
+
+        Parameters
+        ----------
+        grid : BasicGrid or CellGrid
+            The grid to use as the basis for coords and gpis in the MetaGrid.
+        input_subset_name : str, optional (default: 'input_subset')
+            If there is already a subset active in the passed grid, then the
+            subset will have this name in the MetaGrid SubetCollection. If there
+            is no subset, this is ignored.
+        subsets : dict or list, optional (default: 'all')
+            as dict: {name1: [values1], ...}
+            as list: [name1, name2,...]
+            Subset names or subset names and a list of values to consider.
+            If 'all' is passed, all variables (except the reserved_names) are
+            interpreted as subsets.
+
+        Returns
+        -------
+        grid : MetaGrid
+            A MetaGrid with a subset collection loaded from file
+        """
+
+        lons = grid.arrlon
+        lats = grid.arrlat
+        gpis = grid.gpis
+
+        try:
+            cells = grid.arrcell
+        except AttributeError:
+            cells = None
+
+        if not grid.allpoints:
+            meaning = 'Subset from grid used in creation of Metagrid'
+            oss = Subset(name=input_subset_name, gpis=grid.gpis, meaning=meaning)
+        else:
+            oss = None
+
+        if subsets is None:
+            subsets = oss
+        elif isinstance(subsets, SubsetCollection):
+            if oss is not None: subsets.add(oss)
+        else:
+            subsets = subsets + oss if oss is not None else subsets
+
+        subsets = None if len(subsets) == 0 else subsets
+
+        return cls(lons,
+                   lats,
+                   gpis=gpis,
+                   cells=cells,
+                   geodatum=grid.geodatum.name,
+                   setup_kdTree=True,
+                   shape=grid.shape,
+                   subsets=subsets)
+
     def subsets_as_dicts(self, format='all'):
         """
         Return subset points as a dictionary.
@@ -1300,18 +1362,18 @@ class MetaGrid(CellGrid):
         """
 
         try:
-            arrcell = self.arrcell
+            arrcell = self.base.arrcell
         except AttributeError:
             arrcell = None
 
-        gpis = self.gpis
+        gpis = self.base.gpis
 
-        if self.shape is not None:
+        if self.base.shape is not None:
             if global_attrs is None:
                 global_attrs = {}
-            global_attrs['shape'] = self.shape
+            global_attrs['shape'] = self.base.shape
 
-        global_attrs['grid_type'] = self.__class__.__name__ # MetaGrid
+        global_attrs['grid_type'] = self.__class__.__name__  # MetaGrid
 
         subset_dicts = None
         if not self.subsets.empty:
@@ -1319,11 +1381,11 @@ class MetaGrid(CellGrid):
 
         var_attrs = {subset.name: subset.attrs for subset in self.subsets}
 
-        save_lonlat(filename, self.arrlon, self.arrlat, self.geodatum,
+        save_lonlat(filename, self.base.arrlon, self.base.arrlat, self.base.geodatum,
                     arrcell=arrcell, gpis=gpis, subsets=subset_dicts, zlib=True,
                     global_attrs=global_attrs, var_attrs=var_attrs)
 
-    def add_subset(self, subset:{Subset,dict}):
+    def add_subset(self, subset: {Subset, dict}):
         """
         Add a new subset to the subset collection either from a Subset object
         or from a dict with name and gpis as key and value.
@@ -1367,10 +1429,10 @@ class MetaGrid(CellGrid):
         subset_kwargs :
             Additional keywords are passed to the subset generation
         """
-        #if self.active_subset is None:
+        # if self.active_subset is None:
         #    raise ValueError("No subset is currently active")
 
-        gpis = self.get_bbox_grid_points(latmin, latmax, lonmin, lonmax)
+        gpis = self.base.get_bbox_grid_points(latmin, latmax, lonmin, lonmax)
 
         if name is None:
             bbox_str = '_'.join([str(f) for f in [latmin, latmax, lonmin, lonmax]])
@@ -1378,7 +1440,7 @@ class MetaGrid(CellGrid):
 
         self.add_subset(Subset(name, gpis, **subset_kwargs))
 
-    def filter_active_subset(self, vals:{int:list}, **subset_kwargs) -> Subset:
+    def filter_active_subset(self, vals: {int: list}, **subset_kwargs):
         """
         Create a new subset from the currently active one by filtering with
         the passed values.
@@ -1392,16 +1454,15 @@ class MetaGrid(CellGrid):
         else:
             subset = self.active_subset
 
-        return subset.select_by_val(vals, **subset_kwargs)
-
+        self.add_subset(subset.select_by_val(vals, **subset_kwargs))
 
     def deactivate_subset(self):
         """
         Deactivate the current subset. I.e. go back to the initialisation state.
         Also revert splitting if any splitting was performed.
         """
-        self._empty_subset()
-        self.unite()
+        self.base._empty_subset()
+        self.base.unite()
 
     def activate_subset(self, name, vals=None):
         """
@@ -1428,10 +1489,10 @@ class MetaGrid(CellGrid):
 
         subset_gpis = self.active_subset.gpis
 
-        self.activearrlon = self.arrlon[subset_gpis]
-        self.activearrlat = self.arrlat[subset_gpis]
-        self.activegpis = self.gpis[subset_gpis]
-        self.allpoints = False
+        self.base.activearrlon = self.base.arrlon[subset_gpis]
+        self.base.activearrlat = self.base.arrlat[subset_gpis]
+        self.base.activegpis = self.base.gpis[subset_gpis]
+        self.base.allpoints = False
 
         self.subset = subset_gpis
 
@@ -1452,11 +1513,11 @@ class MetaGrid(CellGrid):
         Additional kwargs are used when creating the new subset.
         """
 
-        self.add_subset(self.subsets.combine(subset_names=names,
-                                             new_name=new_name,
-                                             method=method, **subset_kwargs))
+        self.subsets.combine(subset_names=names,
+                             new_name=new_name,
+                             method=method, **subset_kwargs)
 
-    def merge_subsets(self, names:list, new_name, layer_vals=None, keep_merged=True):
+    def merge_subsets(self, names: list, new_name, layer_vals=None, keep_merged=True):
         """
         Merge multiple subsets into a single, new one. Merge down layers in
         the given order. Optionally set a new value for each subset.
@@ -1475,13 +1536,12 @@ class MetaGrid(CellGrid):
             Keep the original input subsets as well as the newly created one.
         """
 
-        self.add_subset(self.subsets.merge(subset_names=names,
-                                           new_name=new_name,
-                                           new_vals=layer_vals,
-                                           keep=keep_merged))
+        self.subsets.merge(subset_names=names,
+                           new_name=new_name,
+                           new_vals=layer_vals,
+                           keep=keep_merged)
 
-
-    def plot(self, only_subset=False):
+    def plot(self, only_subset=False, visualise_vals=False, ax=None, **kwargs):
         """ Draw a basic map of grid points and current active subset """
         try:
             import matplotlib.pyplot as plt
@@ -1489,15 +1549,32 @@ class MetaGrid(CellGrid):
             warnings.warn('Plotting needs matplotlib installed, which is not found')
             return
         from pygeogrids.plotting import points_on_map
-        imax = None
+        imax = ax
 
         if not only_subset:
-            imax = points_on_map(self.arrlon, self.arrlat, color='blue', imax=imax)
+            not_ss_kwargs = {k: v for k, v in kwargs.items() if k not in ['cmap', 'color']}
+            imax = points_on_map(self.base.arrlon, self.base.arrlat,
+                                 c=None, color='grey', imax=imax, **not_ss_kwargs)
 
-        imax = points_on_map(self.activearrlon, self.activearrlat, color='green',
-                           imax=imax, set_auto_extent=True if only_subset else False)
+        if visualise_vals:
+            c = self.active_subset.values
+            if 'cmap' not in kwargs:
+                kwargs['cmap'] = plt.get_cmap('jet')
+        else:
+            c = None
+            if 'color' not in kwargs:
+                kwargs['color'] = 'green'
 
-        plt.show()
+        if 'set_auto_extent' not in kwargs:
+            set_auto_extent = True if only_subset else False
+        else:
+            set_auto_extent = kwargs.pop('set_auto_extent')
+
+        imax = points_on_map(self.base.activearrlon, self.base.activearrlat,
+                             c=c, imax=imax,
+                             set_auto_extent=set_auto_extent,
+                             **kwargs)
+
         return imax
 
 
@@ -1539,8 +1616,7 @@ def lonlat2cell(lon, lat, cellsize=5., cellsize_lon=None, cellsize_lat=None):
     return np.int32(cells)
 
 
-
-def gridfromdims(londim, latdim, **kwargs):
+def gridfromdims(londim, latdim, origin='top', **kwargs):
     """
     Defines new grid object from latitude and longitude dimensions. Latitude
     and longitude dimensions are 1D arrays that give the latitude and
@@ -1552,6 +1628,11 @@ def gridfromdims(londim, latdim, **kwargs):
         longitude dimension
     latdim : numpy.ndarray
         latitude dimension
+    origin : {'bottom', 'top'}, optional (default: 'bottom')
+        If bottom is selected, the GPI origin is at (min_lon, min_lat),
+        i.e. in the bottom left corner.
+        If 'top' is selected, the origin is at (min_lon, max_lat),
+        i.e. in the top left corner
 
     Returns
     -------
@@ -1559,6 +1640,14 @@ def gridfromdims(londim, latdim, **kwargs):
         New grid object.
     """
     lons, lats = np.meshgrid(londim, latdim)
+    if origin.lower() == 'bottom':
+        lats = np.flipud(lats)
+    elif origin.lower() == 'top':
+        pass
+    else:
+        raise ValueError(f"Unexpected origin passed, expected 'top' or 'bottom' "
+                         f"got {origin.lower()}")
+
     return BasicGrid(lons.flatten(), lats.flatten(),
                      shape=(len(latdim), len(londim)), **kwargs)
 
@@ -1658,18 +1747,33 @@ def reorder_to_cellsize(grid, cellsize_lat, cellsize_lon):
                     gpis=new_gpis,
                     subset=new_subset)
 
+
 if __name__ == '__main__':
-    MetaGrid(lon=np.array([1,2,3]), lat=np.array([1,2,3]), gpis=np.array([1,2,3]))
+    import numpy as np
+    from pygeogrids.subset import SubsetCollection
+    import matplotlib.pyplot as plt
+    import cartopy.crs as ccrs
 
-    from pygeogrids.netcdf import load_grid
-    grid = load_grid(r"D:\data-read\grids\qdeg_land_grid.nc")
+    base_grid = genreg_grid(grd_spc_lat=0.25, grd_spc_lon=0.25, origin='bottom')
+    subsets = SubsetCollection.from_file(r'H:\code\pygeogrids\docs\examples\metagrid\europe.nc')
 
-    grid = MetaGrid.load_grid(r"C:\Temp\ssc\final.nc")
+    ax = plt.axes(projection=ccrs.Mercator())
+    metagrid = MetaGrid.from_grid(base_grid, subsets=subsets)
+    metagrid.activate_subset('land')
+    metagrid.plot(False, visualise_vals=False, markersize=10, title='test',
+                  ax=ax)
 
-    grid.save_grid(r"C:\Temp\ssc\test.nc")
-    grid.to_cell_grid(5.)
-    grid.save_grid(r"C:\Temp\ssc\final_cell.nc")
+    metagrid.activate_subset('country')
+    metagrid.plot(True, visualise_vals=True, markers_scalef=0.5)
 
+    metagrid.activate_subset('landcover_class')
+    metagrid.plot(True, visualise_vals=True, markers_scalef=1.)
 
-
-    grid.get_grid_points()
+    # collection = SubsetCollection.from_file(r'C:\Temp\coll\europe.nc')
+    #
+    # grid = MetaGrid(lon=subgrid.arrlon, lat=subgrid.arrlat,
+    #                 gpis=subgrid.gpis, subsets=collection)
+    #
+    #
+    # for subset in ['land', 'landcover_class', 'country']:
+    #     subgrid = load_grid(r"U:\users_temp\subsets.nc")

@@ -31,15 +31,12 @@ try:
     import matplotlib as mp
 except ImportError:
     warnings.warn("Matplotlib is necessary for plotting grids.")
-try:
-    from mpl_toolkits.basemap import Basemap
-except ImportError:
-    warnings.warn("Basemap is necessary for plotting grids.")
 import numpy as np
 import pygeogrids.grids as grids
 
-def points_on_map(lons, lats, figsize=(12, 6), color='blue', imax=None,
-                  llc_lonlat=None, urc_lonlat=None, set_auto_extent=True):
+def points_on_map(lons, lats, c=None, figsize=(12, 6), imax=None,
+                  llc_lonlat=None, urc_lonlat=None, set_auto_extent=True,
+                  markersize=None, **kwargs):
     # create a simple scatter plot of points on a map
     try:
         import cartopy
@@ -47,10 +44,16 @@ def points_on_map(lons, lats, figsize=(12, 6), color='blue', imax=None,
     except ImportError:
         print("Plotting maps needs cartopy, install with 'conda install cartopy'")
         return
+
     data_crs = ccrs.PlateCarree()
+
     if not imax:
         plt.figure(num=None, figsize=figsize, facecolor='w', edgecolor='k')
         imax = plt.axes(projection=ccrs.Mercator())
+
+    if not hasattr(imax, 'projection'):
+        raise AttributeError("Passed ax does not have a projection assigned, "
+                             "create ax like plt.axes(projection=ccrs.Mercator())")
 
     imax.coastlines(resolution='110m', color='black', linewidth=0.25)
     imax.add_feature(cartopy.feature.BORDERS, linewidth=0.1, zorder=2)
@@ -65,14 +68,19 @@ def points_on_map(lons, lats, figsize=(12, 6), color='blue', imax=None,
     if set_auto_extent:
         imax.set_extent([llc_lonlat[0], urc_lonlat[0],
                          llc_lonlat[1], urc_lonlat[1]], crs=data_crs)
-    lon_interval = max([llc_lonlat[0], urc_lonlat[0]]) - \
-                   min([llc_lonlat[0], urc_lonlat[0]])
-    markersize = 1.5 * (360 / lon_interval)
 
-    plt.scatter(lons, lats, s=markersize, zorder=3, transform=data_crs, color=color)
+    if markersize is None:
+        lon_interval = max([llc_lonlat[0], urc_lonlat[0]]) - \
+                       min([llc_lonlat[0], urc_lonlat[0]])
+        markersize = 1.5 * (360 / lon_interval)
+
+    if 'title' in kwargs:
+        imax.set_title(kwargs.pop('title'))
+
+    imax.scatter(lons, lats, c=c, s=markersize, zorder=3, transform=data_crs,
+                **kwargs)
 
     return imax
-
 
 
 def plot_cell_grid_partitioning(output,
@@ -87,6 +95,11 @@ def plot_cell_grid_partitioning(output,
     output: string
         output file name
     """
+    try:
+        from mpl_toolkits.basemap import Basemap
+    except ImportError:
+        warnings.warn("Basemap is necessary for plotting grids.")
+
     mp.rcParams['font.size'] = 10
     mp.rcParams['text.usetex'] = True
     plt.figure(figsize=figsize, dpi=300)
