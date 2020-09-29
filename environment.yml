@@ -4,10 +4,10 @@ channels:
 dependencies:
 - numpy
 - pandas
-- netcdf4
-- gdal
-- geos
-- proj4
-- hdf5
+- netCDF4
+- geopandas
 - pyproj
 - pykdtree
+# optional conda packages:
+- matplotlib
+- cartopy
