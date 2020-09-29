@@ -37,7 +37,40 @@ import pygeogrids.grids as grids
 def points_on_map(lons, lats, c=None, figsize=(12, 6), imax=None,
                   llc_lonlat=None, urc_lonlat=None, set_auto_extent=True,
                   markersize=None, **kwargs):
-    # create a simple scatter plot of points on a map
+    """
+    Create a simple scatter plot of points on a map.
+
+    Parameters
+    ----------
+    lons : np.array
+        List of point lons
+    lats : np.array
+        List of point lats
+    c : np.array, optional (default: None)
+        List of values
+    figsize : tuple, optional (default: (12, 6))
+        Figure size
+    imax : mpl.Axes, optional (default: None)
+        Axes object use for map. If None is passed, a new fig is created.
+        ATTENTION: Only axes with a predefined projection can be used by cartopy.
+    llc_lonlat : tuple, optional (default: None)
+        Lower left corner (lon,lat) of Bbox to plot
+    urc_lonlat:  tuple, optional (default: None)
+        Upper right corner (lon,lat) of Bbox to plot
+    set_auto_extent : bool, optional (default: True)
+        Set the bbox automatically.
+    markersize : float, optional (default: None)
+        Size of the points drawn on the map. Is None is give, size is
+        selected from the spread of visualised points.
+    kwargs :
+        Additional kwargs are given to mpl.scatter().
+
+    Returns
+    -------
+    imax : mpl.Axes
+        Axes with plot.
+    """
+
     try:
         import cartopy
         import cartopy.crs as ccrs
@@ -84,7 +117,7 @@ def points_on_map(lons, lats, c=None, figsize=(12, 6), imax=None,
 
 
 def plot_cell_grid_partitioning(output,
-                                cellsize_lon=5.,
+                                cellsize_lon=5.0,
                                 cellsize_lat=5.0,
                                 figsize=(12, 6)):
     """
@@ -92,9 +125,16 @@ def plot_cell_grid_partitioning(output,
 
     Parameters
     ----------
-    output: string
+    output: str
         output file name
+    cellsize_lat: float, optional (default: 5.)
+        Grid sampling in lat direction.
+    cellsize_lon: float, optional (default: 5.)
+        Grid sampling in lon direction.
+    figsize: tuple, optional (default: (12, 6))
+        Size of the created figure.
     """
+
     try:
         from mpl_toolkits.basemap import Basemap
     except ImportError:

@@ -49,6 +49,7 @@ MANIFEST
 # Per-project virtualenvs
 .venv*/
 
+# Other
+.coverage*/
 **/.ipynb_checkpoints/**
-
 src/_local

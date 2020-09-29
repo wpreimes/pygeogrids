@@ -1746,34 +1746,3 @@ def reorder_to_cellsize(grid, cellsize_lat, cellsize_lon):
     return CellGrid(new_arrlon, new_arrlat, new_arrcell,
                     gpis=new_gpis,
                     subset=new_subset)
-
-
-if __name__ == '__main__':
-    import numpy as np
-    from pygeogrids.subset import SubsetCollection
-    import matplotlib.pyplot as plt
-    import cartopy.crs as ccrs
-
-    base_grid = genreg_grid(grd_spc_lat=0.25, grd_spc_lon=0.25, origin='bottom')
-    subsets = SubsetCollection.from_file(r'H:\code\pygeogrids\docs\examples\metagrid\europe.nc')
-
-    ax = plt.axes(projection=ccrs.Mercator())
-    metagrid = MetaGrid.from_grid(base_grid, subsets=subsets)
-    metagrid.activate_subset('land')
-    metagrid.plot(False, visualise_vals=False, markersize=10, title='test',
-                  ax=ax)
-
-    metagrid.activate_subset('country')
-    metagrid.plot(True, visualise_vals=True, markers_scalef=0.5)
-
-    metagrid.activate_subset('landcover_class')
-    metagrid.plot(True, visualise_vals=True, markers_scalef=1.)
-
-    # collection = SubsetCollection.from_file(r'C:\Temp\coll\europe.nc')
-    #
-    # grid = MetaGrid(lon=subgrid.arrlon, lat=subgrid.arrlat,
-    #                 gpis=subgrid.gpis, subsets=collection)
-    #
-    #
-    # for subset in ['land', 'landcover_class', 'country']:
-    #     subgrid = load_grid(r"U:\users_temp\subsets.nc")

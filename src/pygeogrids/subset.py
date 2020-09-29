@@ -9,6 +9,9 @@ import copy
 class Subset():
     """
     A subset is an arbitrary group of GPIs on a grid (e.g. land points etc.).
+    Each point can have a value assigned (by default all points have the same
+    value) which can be used afterwards to filter the dataset. Attributes
+    can be any meta information.
     """
 
     def __init__(self,
@@ -359,7 +362,7 @@ class SubsetCollection():
     @classmethod
     def from_dict(cls, subsets_dict: dict = None):
         """
-        Create a subset collection from gpis passed as a dict.
+        Create a subset collection from gpis etc. passed as a dict.
 
         Parameters
         ----------
@@ -393,7 +396,7 @@ class SubsetCollection():
 
     @classmethod
     def from_file(cls, filename: str):
-        # todo: keep this? ... not needed to load grid
+        # todo: keep this? ... not needed to load grid itself
         """
         Load subset collection from a stored netcdf file.
 
@@ -445,7 +448,7 @@ class SubsetCollection():
         return cls(subsets=subsets)
 
     def to_file(self, filepath: str):
-        # todo: keep this? ... not needed to save grid
+        # todo: keep this? ... not needed to save the metagrid itself
         """
         Store subsets as variables in netcdf format.
 
@@ -592,15 +595,14 @@ class SubsetCollection():
         new_name : str, optional (default: None)
             Name of the new subset that is created. If None is passed, a name
             is created.
-        keep : bool, optional (default: False)
-            Keep the original input subsets as well as the newly created one.
         new_vals : dict or int, optional (default: None)
             New values that are assigned to the respective, merged subsets.
             Structure: {subset_name: subset_value, ...}
             Any subset named that is selected here, must be in subset_names as
             well. If an int is passed, that value is used for all points of the
             merged subset.
-        Additional kwargs are passed to create the new subset.
+        keep : bool, optional (default: False)
+            Keep the original input subsets as well as the newly created one.
         """
 
         if len(subset_names) < 2:
@@ -638,8 +640,3 @@ class SubsetCollection():
         subset.meaning = f"Merged subsets {', '.join(subset_names)}"
 
         self.add(subset)
-
-
-if __name__ == '__main__':
-    path = r"H:\code\pygeogrids\docs\examples\metagrid\europe.nc"
-    coll = SubsetCollection.from_file(path)
