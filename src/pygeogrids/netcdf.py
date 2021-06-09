@@ -196,7 +196,7 @@ def save_lonlat(filename, arrlon, arrlat, geodatum, arrcell=None,
             longitude.setncattrs(var_attrs['lon'])
 
         if arrcell is not None:
-            cell = ncfile.createVariable('cell', np.dtype('int16').char,
+            cell = ncfile.createVariable('cell', np.dtype('int32').char,
                                          dim,
                                          shuffle=shuffle,
                                          zlib=zlib, complevel=complevel)
